@@ -25,6 +25,12 @@ from decimal import *
 #       (DIFFERENTIAL) PHOTOMETRY".
 #
 #
+#      Version 6.0  
+#              Rename of Veresion 5.12 beta for release
+#      Version 5.12 beta
+#                  Correct bright star VSP label issue with underscore xx_
+#      Version 5.11a_beta
+#                  Correct problem if mix of valid and bad instrument magnitude measurements
 #      Version 5.11 beta
 #                  Correct Errormsg on TG input when no stars missing
 #                  M67 original Henden star 45 cross reference removed 
@@ -576,7 +582,8 @@ def calculatetransforms():
                         else:  # process measurement lines
                             
                             label = aline[0][:3] # get first 3 numbers of vphot_star_id - should match VSP label - also works for two digit star_id
-                                    
+                            if label[-1:] == "_": #remove underscore if two digit star id 
+                                label = label[:-1]
                             try:
                                 
                                 ref_star_id_line_label_match_index = star_id_list_label.index(label)
@@ -588,16 +595,13 @@ def calculatetransforms():
                                         star_id_not_matched_list = star_id_not_matched_list + one_msg_line + "\n"  # add line to error message
                                         one_msg_line = ""
                                 continue # no match - go to next measurement file input line
-#                            print("found label in standards file - label, ref_star_id_line_label_match_index = ",label,ref_star_id_line_label_match_index)
                             
     # Search VSP data with same label to find matching star magnitude and B-V # sf_col_list = ["RA","Dec","U","B","V","R","I"] # list names of each column in std_field_mags array  ;
                             for j in range(ref_star_id_line_label_match_index,ref_star_id_line_label_match_index + 20):
-                                
                                 if abs(float(aline[vphot_col_list.index("Ref-mag")]) - std_field_mags[j,sf_col_list.index(currentfilter.upper())]) < .001 and \
                                    abs(float(aline[vphot_col_list.index("B-V")]) - ((std_field_mags[j,sf_col_list.index("B")] - std_field_mags[j,sf_col_list.index("V")]))) < .001:
                                      vphot_AUID_index = j
                                      vphot_star_id[j] = aline[vphot_col_list.index("Vphot_Star_id")] # save VPHOT Star id
-                                     
                                      
                                      
 #
@@ -634,21 +638,22 @@ def calculatetransforms():
                                                                                                       measured_machine_mags[k,mmm_col_lst.index(currentfilter)] + \
                                                                                                       float(aline[vphot_col_list.index("IM")]))/   \
                                                                                                       (mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)] + 1)
+                                         
                                          mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)] += 1 # add one to count of observations for this filter
                                      else:
-                                         
-                                         measured_machine_mags[k,mmm_col_lst.index(currentfilter.lower())] = -1000 # set bad data indicator
+                                         if mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)] == 0: # if no valid data for this filter, indicate bad data found
+                                             measured_machine_mags[k,mmm_col_lst.index(currentfilter.lower())] = -1000 # set bad data indicator
                                      break # found match - go to next line
+                                
                                 continue # search next standard line to find match
                                 
-                                Errormsg("Can not find matching VSP star - skipping measurment for VPHOT star id \n " + aline[0])
                 
                 if star_id_not_matched_list != "":
                     Errormsg("Reference Star ids not found in VSP -\n" + star_id_not_matched_list + one_msg_line + "\nStars Excluded from Calculation")
                 if activestars < 2:
                     Errormsg("Less than two active stars in VPhot File")
                     return
-                num_meas_stars = srow # total number of stars with measurements
+                num_meas_stars = srow + 1 # total number of stars with measurements
 #
 # Search all magnnitudes and set any 0 to -1000 indicating no measurement or bad measurement
 # mmm_col_lst = ["Star_id_index","RA","Dec","u","b","v","r","i"]
@@ -1103,9 +1108,8 @@ class Errormsg():
         self.errwindow = Toplevel()
         self.errwindow.title("Error Message")
 #        self.errwindow.geometry("400x200")
-        Label(self.errwindow,text=("   "+ message),background = "red",font="12").grid(columnspan=4)
+        textmsg = Label(self.errwindow,text=("   "+ message),background = "red",font="12").grid(columnspan=4)
         Button(self.errwindow,text="OK",command = self.quit,font="12").grid(columnspan=4)
-        
     def quit(self):
         self.errwindow.destroy()
 
@@ -1650,7 +1654,7 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 5.11a beta"
+version = " - Version 6.0"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
