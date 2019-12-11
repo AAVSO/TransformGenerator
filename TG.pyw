@@ -1,5 +1,5 @@
 #
-#   TG VERSION 6.3
+#   TG VERSION 6.4
 #
 import matplotlib
 matplotlib.use('TkAgg')
@@ -20,6 +20,7 @@ import numpy as np
 from scipy import stats
 import matplotlib.pyplot as plt
 from time import gmtime,strftime,time
+import time
 import pickle
 try:
     from urllib2 import urlopen
@@ -38,6 +39,10 @@ from decimal import *
 #       Bruce Gary's "CCD TRANSFORMATION EQUATIONS FOR USE WITH SINGLE IMAGE                #
 #       (DIFFERENTIAL) PHOTOMETRY".
 #
+#
+#      Versionn 6.4
+#              Add support for Landolt field
+#              Fix delete transform sets (Mac issue)
 #      Version 6.3
 #              Add Melotte 111 field support
 #              Add code to import and work on both Python 3.x and 2.7 
@@ -190,7 +195,7 @@ from decimal import *
 #############################################################################################
 def calculatetransforms():
             global md_col_list,meas_JD,transform_names,transform_inst,num_meas_stars,transform_raw_data,fig1,tel_id,meas_JD
-            global txtboxlab,titlab,std_field_name,transform_val_err,star_id_list,file_namelist,vphot_snr
+            global txtboxlab,titlab,std_field_name,transform_val_err,star_id_list,file_namelist,vphot_snr,radecwindow,enteredfield
 
            
 #
@@ -202,21 +207,90 @@ def calculatetransforms():
 #   Retrieve Standards file from ASP VSP
 #
             if std_field_name == "M67":
-                searchfield = "ht+cnc"
+                searchfield = "ra=132.825&dec=11.8"
             elif std_field_name == "NGC7790":
-                searchfield = "ce+cas"
+                searchfield = "ra=359.6&dec=61.217"
             elif std_field_name == "M11":
-                searchfield = "IT+Sct"
+                searchfield = "ra=282.775&dec=-6.267"
             elif std_field_name == "NGC 1252":
-                searchfield = "TW+hor"
+                searchfield = "ra=47.704&dec=-57.767"
             elif std_field_name == "NGC 3532":
-                searchfield = "ER+Car"
+                searchfield = "ra=166.412&dec=-58.752"
             elif std_field_name == "Melotte 111":
-                searchfield = "IL+Com"
-            elif std_field_name == "SA98SF1":
-                searchfield=  "NSV+3249"
+                searchfield = "ra=186.275&dec=26.1"
+            elif std_field_name == "Landolt Field": # Search input file for RA/Dec
+# Open input file (if AIP4WIN, the only file; if VPHOT first of multiple - only look at first file for RA/Dec)
+                searchra,searchdec = "Landolt","Landolt" # set as default in case no RA/Dec found
+                try:
+                    measurements = open(magfilenam,mode="r")  # retrieve instrument measurements file
+                except:
+                    Errormsg("Invalid File Name - '"+magfilenam+"'")
+                    return
+#  Use selected format to decide how to search for RA/Dec
+                if fmt_name.get() == "VPHOT":  # check if instrument magnitudes are in VPHOT
+# Process one VPHOT file to find RA/DEC                    
+                    for oneline in measurements: # process each line in the file
+#                        print("oneline in measurements - ",oneline)
+                        if oneline == "\n" or oneline == "\r\n":
+                            continue # read next line
+                        aline = [] # create holding list for parsed oneline
+                        delim = [":",":"]  # colon delimeter
+                        lineparse(oneline,aline,delim)
+                        if aline[0] == "R.A.":
+                            searchra = str(15*(float(aline[1])+float(aline[2])/60+float(aline[3])/3600))[:7]
+                        if aline[0] == "Dec.":
+                            searchdec = str(np.sign(float(aline[1]))*(abs(float(aline[1]))+float(aline[2])/60+float(aline[3])/3600))[:6]
+                        if searchra != "Landolt" and searchdec != "Landolt" :
+                            break  #  found ra and dec - 
+# Process AIP4WIN, TG or MaxIm file
+                else:  #  Landolt input file must be TG/AIP4WIN or MaxIm
+                    for oneline in measurements: # process each line in the file
+                        if oneline.find("Target") == -1:
+                            continue  # not target line - go to next line
+                        i = oneline.find("RA=")
+                        if i > 0:  # RA found
+                            j = oneline.find(" ",i) # find spaace after RA
+                            searchra = oneline[i+3:j]
+                        i = oneline.find("DEC=")
+                        if i > 0:  #DEC found
+                            j = oneline.find(" ",i)  # find space after DEC
+                            searchdec = oneline[i+4:j]
+                        if searchra != "Landolt" and searchdec != "Landolt":
+                                break # found ra and dec 
+                if searchra == "Landolt" or searchdec == "Landolt":  # if ra/dec not found, request manual entry
+                    ra_dec_entry_window() # Display Window to obtain RA/Dec from user
+                    root.wait_window(radecwindow)
+                    searchfield = enteredfield  #  use values entered by user
+                    print("searchfield ",searchfield)
+                else:
+                    searchfield = "ra=" + searchra + "&dec=" + searchdec  # use values from instrument files
+#  Change "Landolt Field" standard field name to more specific value
+                k = searchfield.find("&")
+                m = searchfield.find(".",k+5)
+                if m == -1 :  # no period
+                    m = len(searchfield)
+                if searchfield[k+5:k+6] == "-" :
+                    dec = searchfield[k+6:m]
+                    if len(dec)  == 1:
+                        dec = "0" + dec
+                    dec = "-" + dec
+                else:
+                    dec = searchfield[k+5:m]
+                    if len(dec) == 1:
+                        dec = "0" + dec
+                    dec = "+" + dec
+                ra = str(((float(searchfield[3:k]))/15) + .05)[:4]  # round ra to nearest tenth of an hour
+                if ra[1:2] == ".":
+                    ra = "0" + ra[0:3]
+                
+                std_field_name = "LF " + ra + dec
+#                print ("searchfield ",searchfield)
+                    
+                    
+                    
             else:
                 print("Should not get here!")
+                        
             
 # Retrieve Standard Field File 
           
@@ -232,13 +306,14 @@ def calculatetransforms():
 ##              NEW VSP API CODE TO RETIEVE STANDARD REFERENCE MAGNITUDES
 #
             try:
-                f = urlopen('https://www.aavso.org/apps/vsp/api/chart/?star='+ searchfield +'&fov=210&maglimit=16.5&special=std_field&format=json')
+                f = urlopen('https://www.aavso.org/apps/vsp/api/chart/?'+ searchfield +'&fov=210&maglimit=16.5&special=std_field&format=json')
 
             except:
                 Errormsg("Could Not Access AAVSO Web Site")
                 return
             chart_data = json.load(f)   # chart_data is a python dictionary
             vsp_ref_data = chart_data.get("photometry")  # vsp_ref_data is a Python list, vsp_ref_data[i] are dictionaries
+            i = 0 # avoid error if no reference stars
             for i in range(len(vsp_ref_data)):
                 star_id_list.append(vsp_ref_data[i].get("auid"))  # store auid
                 star_id_list_label.append(str(vsp_ref_data[i].get("label")))  # store VPHOT/VSP label - use string format to match AIP and MaxIm
@@ -265,7 +340,9 @@ def calculatetransforms():
                 
                 
             std_field_star_count = i + 1
-                
+            if std_field_star_count < 3 :
+                Errormsg("Less than 3 Reference Stars - Abort Calculations")
+                return            
             
 #
 #  For NGC7790 and M67, add original Henden star identifiers to master standard field magnitudes array - but use current VSP reference magnitudes
@@ -274,11 +351,8 @@ def calculatetransforms():
                 star_id_add_list = m67_AUID_map
             elif std_field_name == "NGC7790":
                 star_id_add_list = ngc7790_AUID_map
-            elif std_field_name == "M11" or std_field_name == "NGC 1252" or std_field_name == "NGC 3532" or std_field_name == "SA98SF1":
-                star_id_add_list = []  # No stars to add
             else:
-                Errormsg("Invalid standard field name")  # indicate no star ids to add b
-            
+                star_id_add_list = []  # No stars to add
             j = -1 # keep count of star ids added
             for i in range(len(star_id_add_list)):  # for each star in original list, add line to std_field_mags array and star_id_list list if matching AUID
                 try:  # check if original star id has current day AUID
@@ -547,7 +621,7 @@ def calculatetransforms():
                 
             elif fmt_name.get() == "VPHOT":
                 if len(file_namelist) < 2 :
-                    Errormsg("Need at least one file for each filter for VPHOT")
+                    Errormsg("Need at least two filters data to create transforms")
                     return
 # Read and process first VPHOT file
                 snr_limit = float(vphot_snr.get())
@@ -578,15 +652,17 @@ def calculatetransforms():
                                 currentfilter = aline[0][8:9].lower()
                                 if currentfilter == "u":
                                     u_ind = 1
-                                if currentfilter == "b":
+                                elif currentfilter == "b":
                                     b_ind = 1
-                                if currentfilter == "v":
+                                elif currentfilter == "v":
                                     v_ind = 1
-                                if currentfilter == "r":
+                                elif currentfilter == "r":
                                     r_ind = 1
-                                if currentfilter == "i":
+                                elif currentfilter == "i":
                                     i_ind = 1
-                                
+                                else:
+                                    Errormsg("File " + file_namelist[file_i] + "\n contains invalid filter name " + aline[0][8:len(oneline)] + "\n File Skipped")
+                                    break
                                 continue
                             if aline[0][:3] == "JD:":  #Find Julian Date
                                 meas_JD = aline[0][4:]
@@ -779,7 +855,9 @@ def calculatetransforms():
                     transform_names.append("Tr_vi")
                     
             
-            
+            if len(transform_names) == 0 :  # check that some transform values can be calculated
+                Errormsg("No standard transforms can be computed with filters submitted")
+                return
 #
 #  Go to method to calculate actual transforms
 #
@@ -1153,8 +1231,8 @@ class MessageBox():
 # Create single line two radiobutton widget  #
 ##############################################
 
-class SixRadioButton():
-    def __init__(self,master,linetag,btn1name,btn2name,btn3name,btn4name,btn5name,btn6name,line,col,var):
+class SevenRadioButton():
+    def __init__(self,master,linetag,btn1name,btn2name,btn3name,btn4name,btn5name,btn6name,btn7name,line,col,var):
         Label(master,text=linetag,font=12,bg="#E0FFFF").grid(row=line,column=col,columnspan=1,sticky="E")
         Radiobutton(master,text=btn1name,variable=var,value=btn1name,font=12).grid(row=line,column=col+1,sticky = "w", pady=5)
         Radiobutton(master,text=btn2name,variable=var,value=btn2name,font=12).grid(row=line,column=col+2,sticky = "w", pady=5)
@@ -1162,7 +1240,7 @@ class SixRadioButton():
         Radiobutton(master,text=btn4name,variable=var,value=btn4name,font=12).grid(row=line,column=col+4,sticky = "w", pady=5)
         Radiobutton(master,text=btn5name,variable=var,value=btn5name,font=12).grid(row=line,column=col+5,sticky = "w", pady=0)
         Radiobutton(master,text=btn6name,variable=var,value=btn6name,font=12).grid(row=line,column=col+6,sticky = "w", pady=5)
-
+        Radiobutton(master,text=btn7name,variable=var,value=btn7name,font=12).grid(row=line,column=col+7,sticky = "w", pady=5)
 ##############################################
 # Parse line into list                       #
 ##############################################
@@ -1301,7 +1379,7 @@ def deletesets():
     listobs = "" # create string of obs set julian date + transform create date/time
 # Set up scrolled listbox
     myframe = Frame(root3)
-    myframe.pack(side=RIGHT, fill=Y)
+#    myframe.pack(side=RIGHT, fill=Y) - remove causing mac problem
     scrollbar = Scrollbar(myframe)
     scrollbar.pack(side=RIGHT,fill=Y)
     obspicklist = Listbox(myframe,height = 15, selectmode="multiple",width=40,bg = "white",yscrollcommand=scrollbar.set)
@@ -1448,7 +1526,7 @@ def getlist():
         Label(root2,text="Julian Date of obs (245xxxx.xxx) ",font="10").grid(row=3,column=2,columnspan=2,sticky="E")
         Label(root2,text="   YY_MM_DD transforms computed",font="10").grid(row=4,column=2,columnspan=2,sticky="E")
         Label(root2,text="HH:MM:SS transforms computed",font="10").grid(row=5,column=2,columnspan=2,sticky="E")
-        Label(root2,text="Standards Field",font="10").grid(row=6,column=2,columnspan=2,sticky="E")
+        Label(root2,text="Standards Field (LF=Landolt RA/Dec)",font="10").grid(row=6,column=2,columnspan=2,sticky="E")
         table_start_row=1
         for i in range(len(allxforms)):  # display list of all possible transforms
             Label(root2,text=(allxforms[i] + " "),font="9").grid(row=table_start_row+6+i,column=3,sticky="E")
@@ -1464,15 +1542,59 @@ def getlist():
     else:
         message = "Reduce to %3.0f or less selections" % max_selected_sets
         Errormsg(message)
+##################################################################################        
+##################################################################################
+#                                                                               ##
+#    Create Window to Accept Manual Entry of RA/Dec for standard field center   ##
+#                                                                               ##
+##################################################################################
+##################################################################################
         
+def ra_dec_entry_window():
+    global raentry,decentry,radecwindow
+    radecwindow = Toplevel()
+    radecwindow.title("Landolt Field RA/Dec Entry")
+    Label(radecwindow, text = "Enter Standard Field Coordinates",font = 12).grid(row=0,column=0,columnspan=2)
+    raLabel = Label(radecwindow,text=("RA (HH:MM:SS or DDD.xxx)"),font = 12).grid(row=1,column=0)
+    raentry = Entry(radecwindow,font=12)
+    raentry.grid(row=1,column=1)
+    decLabel = Label(radecwindow,text=("Dec (+/-DD:MM:SS or DD.xxx)"),font=12).grid(row=2,column=0)
+    decentry = Entry(radecwindow,font=12)
+    decentry.grid(row=2,column=1)
+    Button(radecwindow,text="Enter",command = quitra,font="12").grid(row=3,columnspan=2)
 
-
-
-             
-        
-
-
+def quitra():
+    global raentry,decentry,radecwindow,enteredfield
+    rainput = raentry.get()
+    decinput = decentry.get()
+    try:
+        if rainput.find(":") > 0 : # if colon found assume HH:MM:SS format
+            aline = [] # create holding list for parsed oneline
+            delim = [":",":"]  # colon delimeter
+            lineparse(rainput,aline,delim)
+            searchra = str(15*(float(aline[0])+float(aline[1])/60+float(aline[2])/3600))[:7]
+        else:  # assume DDD.xxx format
+            searchra = rainput
+            
+    except:
+        Errormsg("Invalid RA Format")
+        return
+    try:
+        if decinput.find(":") > 0 : # if colon found assume +/-DD:MM:SS format
+            aline = [] # create holding list for parsed oneline
+            delim = [":",":"]  # colon delimeter
+            lineparse(decinput,aline,delim)
+            searchdec = str(np.sign(float(aline[0]))*(abs(float(aline[0]))+float(aline[1])/60+float(aline[2])/3600))[:7]
+        else: # assume DDD.xxx format
+            searchdec = decinput
+    except:
+        Errormsg("Invalid Dec Format")
+        return
+    enteredfield = "ra="+searchra+"&dec="+searchdec
+    radecwindow.destroy()
     
+    
+
     
 ###########################################################
 #                                                         #
@@ -1518,7 +1640,7 @@ class Obs_Set_Columns(Frame):
             self.obshhmmss = "  "
         self.t3.insert(0.2,self.obshhmmss)
 #  Add code to display standard field used in obervation set
-        self.t4 = Text(master,width=9,height=1)
+        self.t4 = Text(master,width=10,height=1)
         self.t4.grid(row=boxrow+4,column=boxcol,pady=3) #
         self.field = self.record[7]
         if remove_col == "Y":
@@ -1674,7 +1796,7 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 6.3"
+version = " - Version 6.4"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
@@ -1849,12 +1971,13 @@ btn2name = "NGC7790"
 btn3name = "M11"
 btn4name = "NGC 1252"
 btn5name = "NGC 3532"
-btn6name = "SA98SF1"
+btn6name = "Melotte 111"
+btn7name = "Landolt Field"
 line = 2
 col = 0
 var = StringVar()
 var.set(btn1name)
-SixRadioButton(app,linetag,btn1name,btn2name,btn3name,btn4name,btn5name,btn6name,line,col,var)
+SevenRadioButton(app,linetag,btn1name,btn2name,btn3name,btn4name,btn5name,btn6name,btn7name,line,col,var)
 
 
 # Retrieve Format and File Name of Magnitude Measurements File
