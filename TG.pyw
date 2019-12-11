@@ -35,6 +35,13 @@ import astropy.units as u
 from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 import math
+try:
+    import Tkinter as tk
+    import tkFont
+#    import ttk  # not used here
+except ImportError:  # Python 3
+    import tkinter as tk
+    import tkinter.font as tkFont
 #try:
 #    # for Python2
 #    import Tkinter as tk
@@ -54,6 +61,19 @@ import math
 #       coefficients described in Henden - "Astronomical Photometry" and                    #
 #       Bruce Gary's "CCD TRANSFORMATION EQUATIONS FOR USE WITH SINGLE IMAGE                #
 #       (DIFFERENTIAL) PHOTOMETRY".
+#
+#
+#
+#
+#
+#
+#
+#      Version 7.2
+#              Since verion 6.5 - major updates
+#                   Extinction Processing
+#                   Testing Transforms with standard VPHOT fields
+#                   Optimizing Transforms
+#
 #
 #
 #      Version 6.5
@@ -217,8 +237,8 @@ import math
 def calculatetransforms():
             global md_col_list,meas_JD,transform_names,transform_inst,num_meas_stars,transform_raw_data,fig1,tel_id
             global txtboxlab,titlab,std_field_name,transform_val_err,star_id_list,file_namelist,vphot_snr,radecwindow,enteredfield
-            global radecimal,decdecimal,errflag,extinction_setting,kprime_u,kprime_b,kprime_v,kprime_r,kprime_i,ext_used
-            global star_id_list,star_id_list_label,std_fields_mag,std_field_star_count,searchfield
+            global radecimal,decdecimal,errflag,extinction_setting,kprime_u,kprime_b,kprime_v,kprime_r,kprime_i,kdblprime_b,kdblprime_v,kdblprime_r,kdblprime_i,ext_used
+            global star_id_list,star_id_list_label,std_fields_mag,std_field_star_count,searchfield,std_field_mags,sf_col_list,detailed_print_setting
 
            
 #
@@ -235,21 +255,25 @@ def calculatetransforms():
                 lineparse(line,aline,[";",";"]) # on ; is delimiter
 #                print("\naline, telescopename, len(aline) ",aline,telescopename, len(aline))
 #                print("aline[1], telescopename,len(aline)",aline[1], telescopename,len(aline))
-                if (aline[1] == telescopename) and (len(aline) == 13): # found extinction record
+                if (aline[1] == telescopename) and (len(aline) == 16): # found extinction record
                     ext_aline = aline # save all telescope data including extinction, observatory location
 #                    print("ext_aline, ",ext_aline)
-# Format of telescope line "ext_aline" -  #  'Telescope id';ex_tel_id;k'u;k'b;k'v;k'r;k'i;k"bbv;obs_lat;obs_long;obs_elev;obslatdecimal;obslongdecimal;\n
+# Format of telescope line "ext_aline" -  #  'Telescope id';ex_tel_id;k'u;k'b;k'v;k'r;k'i;k"b,k"v,k"r,k"i,;obs_lat;obs_long;obs_elev;obslatdecimal;obslongdecimal,\n
+
                     kprime_u = aline[2]
                     kprime_b = aline[3]
                     kprime_v = aline[4]
                     kprime_r = aline[5]
                     kprime_i = aline[6]
-                    kdblprime_v = aline[7]
-                    obs_lat = aline[8]
-                    obs_long = aline[9]
-                    obs_elev = aline[10]
-                    obslatdecimal = aline[11]
-                    obslongdecimal = aline[12]
+                    kdblprime_b = aline[7]
+                    kdblprime_v = aline[8]
+                    kdblprime_r = aline[9]
+                    kdblprime_i = aline[10]
+                    obs_lat = aline[11]
+                    obs_long = aline[12]
+                    obs_elev = aline[13]
+                    obslatdecimal = aline[14]
+                    obslongdecimal = aline[15]
                     break # valid extinction record
                 elif aline[1] == telescopename : # means no extinction values set
                     ext_aline = [] # informs later logic no extinction data
@@ -700,6 +724,9 @@ def calculatetransforms():
                 star_id_not_matched_list = "" 
                 one_msg_line = ""
                 mmm_data_started = "N"                
+                pbar_ext = ttk.Progressbar(app,orient = 'horizontal',length = 200, mode = "determinate",maximum = len(file_namelist)) # progress bar for transformation
+                pbar_ext.grid(row=12,column=5,sticky="NESW")
+
                 for file_i in range(len(file_namelist)): # process each file listed
 #                    print("\n\n\n\n****************************************************************************************************")
  #                   print("file_i = ",file_i)
@@ -829,7 +856,8 @@ def calculatetransforms():
                             
 #
 # mmm_col_lst = ["Star_id_index","RA","Dec","u","b","v","r","i"]
-#
+# sf_col_list = ["RA","Dec","U","B","V","R","I"] # list names of each column in std_field_mags array
+# filtlist = ["u","b","v","r","i"]
 #  First, insert RA/Dec for each star into measured_machine_mags                                                                   #
                                             
                             ext_used = "Yes"
@@ -839,37 +867,46 @@ def calculatetransforms():
                                 measured_machine_mags[i,mmm_col_lst.index("Dec")] = std_field_mags[star_id_ref,sf_col_list.index("Dec")]
 #  Adjust instrument magnitudes for this VPHOT file i.e. one filter with one time of observation
                             first_order_list = [kprime_u,kprime_b,kprime_v,kprime_r,kprime_i]
+                            second_order_list = [0,kdblprime_b,kdblprime_v,kdblprime_r,kdblprime_i] # first zero for kdblprime_u which by definition is zero (not sure why...)
                             filtlist = ["u","b","v","r","i"]
 #                         
-# Format of telescope line "ext_aline" -  #  'Telescope id';ex_tel_id;k'u;k'b;k'v;k'r;k'i;k"bbv;obs_lat;obs_long;obs_elev;obslatdecimal;obslongdecimal,\n
+# Format of telescope line "ext_aline" -  #  'Telescope id';ex_tel_id;k'u;k'b;k'v;k'r;k'i;k"b,k"v,k"r,k"i,;obs_lat;obs_long;obs_elev;obslatdecimal;obslongdecimal,\n
 
                             obs_lat_float_decimal = float(obslatdecimal)
                             obs_long_float_decimal = float(obslongdecimal)
                             obs_elev_float = float(obs_elev)
-#                            print("obs_lat,obs_long_obs_elev = ",obs_lat_float_decimal,obs_long_float_decimal,obs_elev_float)
                             obs_location = EarthLocation(lat=obs_lat_float_decimal*u.deg, lon=obs_long_float_decimal*u.deg, height=obs_elev_float*u.m)
+                            if detailed_print_setting.get() == "Y":
+                                print(50*"*" + "  VPHOT Load in Generating Transforms logic - Extinction Application - calculatetransforms()\n")
                             for i in range(num_meas_stars):
+                                star_AUID_index = int(measured_machine_mags[i,mmm_col_lst.index("Star_id_index")])
+                                if detailed_print_setting.get() == "Y":
+                                    print("\nStar AUID - ",star_id_list[star_AUID_index])
                                 star_coord = (SkyCoord(measured_machine_mags[i,mmm_col_lst.index("RA")],
                                               measured_machine_mags[i,mmm_col_lst.index("Dec")], unit = "deg"))
                                 meas_JD_float = float(meas_JD)
-#                                print("\n\n\n\nmeas_JD_float = ",meas_JD_float)
                                 t = Time(val = meas_JD_float, format='jd' )
-#                                print("t= ",t)
                                 star_loc  = star_coord.transform_to(AltAz(obstime=t,location=obs_location))
                                 airmass = star_loc.secz
-#                                print("\nstar, airmass = ",star_id_list[int(measured_machine_mags[i,mmm_col_lst.index("Star_id_index")])],airmass)
-                                filt_index = mmm_col_lst.index(currentfilter)
- #                               print("\nfilt_index , filt = ",filt_index,filtlist[filt_index-3])
-                                if measured_machine_mags[i,filt_index] != 0 and measured_machine_mags[i,filt_index] != -1000 : # skip empty cells and FAlSE stars
-                                    measured_machine_mags[i,filt_index] -= airmass*first_order_list[filt_index-3]  # apply extinction, note offset of 4 between ext_aline and mmm_col_list
+                                mmm_filt_index = mmm_col_lst.index(currentfilter.lower()) # index in mmm array
+                                if detailed_print_setting.get() == "Y":
+                                    print("\ncurrentfilter, filt_index , filt = ",currentfilter, mmm_filt_index,filtlist[mmm_filt_index-3])
                                 
-                                
-
-
-    
-                            
-
-#  Apply Extinction
+                                if measured_machine_mags[i,mmm_filt_index] != 0 and measured_machine_mags[i,mmm_filt_index] != -1000 : # skip empty cells and FAlSE stars
+                                    measured_machine_mags[i,mmm_filt_index] -= airmass*first_order_list[mmm_filt_index-3]  # apply extinction, note offset of 4 between ext_aline and mmm_col_list
+                                    if detailed_print_setting.get() == "Y":
+                                        print("airmass*first_order_list[mmm_filt_index-3] = ",airmass*first_order_list[mmm_filt_index-3])
+                                    if currentfilter.lower() != "i" :  # no second order filter correction for i possible
+                                        if detailed_print_setting.get() == "Y":
+                                            print("\n2nd order terms,airmass,second_order_list[mmm_filt_index-3],std_field_mags[star_AUID_index,mmm_filt_index-2],std_field_mags[star_AUID_index,mmm_filt_index-1]\n",(
+                                                airmass,second_order_list[mmm_filt_index-3],std_field_mags[star_AUID_index,mmm_filt_index-1],std_field_mags[star_AUID_index,mmm_filt_index]))
+                                        measured_machine_mags[i,mmm_filt_index] -= airmass*second_order_list[mmm_filt_index-3]*(
+                                            std_field_mags[star_AUID_index,mmm_filt_index-1] - std_field_mags[star_AUID_index,mmm_filt_index])
+#      progress bar status
+                    pbar_ext.step(amount = 1)
+                    root.update()
+                    time.sleep(0.5)
+                pbar_ext.destroy()
 
 #        End of extinction application                        
 #                                                   
@@ -1490,7 +1527,7 @@ def get_file_name():
     if tel_id == "Add Scope":
         Errormsg("Select Telescope Name first")
     else:
-        fn = askopenfilenames() # may be multiple files if VPHOT
+        fn = askopenfilenames(title = "Select Instrument Measurements File(s)") # may be multiple files if VPHOT
         file_namelist = root.tk.splitlist(fn)
         filelabel.delete(1.0,END)  # clear previous text
         filelabel.insert(0.0,fn)
@@ -1513,6 +1550,7 @@ def tel_id_pick(event):
     merge_obs_sets_button.configure(activebackground = "#E0FFFF",state = "active",bg="#E0FFFF")
     getfilnamebutton.configure(state = "active",activebackground = "#E0FFFF",bg="#E0FFFF")
     delete_obs_sets_button.configure(state = "active",activebackground = "#E0FFFF",bg="#E0FFFF")
+    test_transform_set_button.configure(state = "active", activebackground = "#E0FFFF",bg="#E0FFFF")
     tel_id = tel_id_box.get()
     if tel_id == "Add Scope":
         tel_id_win = Toplevel()
@@ -1557,6 +1595,12 @@ def save_new_tel_id():
 ######################################################
 
 def savetransforms():
+    msg = savetransforms_1()
+    MessageBox(msg + "\n")
+    return
+
+
+def savetransforms_1():
     global transform_names,transform_val,transform_val_err,transform_val_r2,meas_JD,tel_id,std_field_name,ext_used
     curtime = strftime("%Y%m%d%H%M%S",gmtime())
     record = [tel_id,meas_JD,curtime,transform_names,transform_val,transform_val_err,transform_val_r2,std_field_name,ext_used]
@@ -1564,8 +1608,8 @@ def savetransforms():
     transform_file = open("transform_values.ptgp","ab")
     pickle.dump(record,transform_file)
     transform_file.close()
-    msgtxt = curtime[0:4] + "-" + curtime[4:6] + "-" + curtime[6:8] + "  " + curtime[8:10] +":" + curtime[10:12] + ":" + curtime[12:]
-    MessageBox("Transforms saved at UT\n " + msgtxt)
+    msgtxt = "Transforms saved on Review/Average Page \nat UT  " +curtime[0:4] + "-" + curtime[4:6] + "-" + curtime[6:8] + "  " + curtime[8:10] +":" + curtime[10:12] + ":" + curtime[12:]
+    return msgtxt
 
 ###############################################################################
 ###############################################################################
@@ -1708,15 +1752,10 @@ def mergesets():
 #             print("record=",record)
 #            print("\nlen(record),record[len(record)-1] = ",len(record),record[len(record)-1])
             if record[0] == tel_id:
-#
-#  NEED TO ADD CODE TO HANDLE OLD TRANSFORM RECORDS WITHOUT EXTINCTION FIELD ADDED  - FIX NEEDED
-#
-#                print("record before append = ",record)
                 if len(record) == 8:  # this i an old version record before extinction added
                     record.append("No") # Indicate old version had no extinction applied
 
                 tel_id_saved_xforms.append(record)
-#                print("record after append = ",record)    
                 count = count + 1
         except Exception as e:
             print("Error Code = ",e)
@@ -2091,10 +2130,17 @@ def avg_sets():
 #                                                                              #
 ################################################################################
 
+
 def export_transforms():
+    msg = export_transforms_1(root2)
+    MessageBox(msg)
+    return
+
+
+def export_transforms_1(parentname):
     global xforms_txt,allxforms,tel_id,output_file_xform_val_list,output_file_xform_err_list,output_file_xform_r2_list
-    export_file = asksaveasfile(mode="w",defaultextension = ".ini",parent = root2,
-                                title = "Enter Name of Export File")
+    export_file = asksaveasfile(mode="w",defaultextension = ".ini",
+                                title = "Enter Name of Export File", parent = parentname)
     curtime = strftime("%Y_%m_%d_%H:%M:%S",gmtime())
     avg_xforms_record = "[Setup]\ndescription= TG" + version 
     avg_xforms_record = avg_xforms_record + ", Telescope= " + tel_id +", Time created (UT) = "+ curtime + "\n[Coefficients]\n"
@@ -2109,7 +2155,8 @@ def export_transforms():
     export_file.write(avg_xforms_record)
     export_file.close()
     fname = export_file.name
-    MessageBox("Average Transforms for Telescope " + tel_id + "\nSaved at UT\n" + curtime + " to file\n" + fname)
+    msg = "Transforms for Telescope " + tel_id + "\nSaved at UT\n" + curtime + " to file\n" + fname
+    return msg
     
 ######################################################################
 ######################################################################
@@ -2122,7 +2169,7 @@ def export_transforms():
 
 def save_extinction():
     global extinctwindow
-    global ex_tel_id_box,ex_tel_id,kprime_u,kprime_b,kprime_v,kprime_r,kprime_i,kdblprim_b,obs_lat,obs_long,obs_elev
+    global ex_tel_id_box,ex_tel_id,kprime_u,kprime_b,kprime_v,kprime_r,kprime_i,kdblprim_b,kdblprim_v,kdblprim_r,kdblprim_i,obs_lat,obs_long,obs_elev
     global radecimal,decdecimal,errflag,fmt_type
 #
 #  Validate lat/long input
@@ -2200,20 +2247,20 @@ def save_extinction():
             outputline.append(line)
             continue
         newline = ("Telescope_id;" + ex_tel_id + ";" + kprime_u.get() + ";" + kprime_b.get() + ";" +kprime_v.get() + ";" +kprime_r.get() + ";" 
-            + kprime_i.get() + ";" + kdblprim_b.get() + ";" + obs_lat.get() + ";" + obs_long.get() + ";" + obs_elev.get() + ";" +
+            + kprime_i.get() + ";" + kdblprim_b.get() + ";" + kdblprim_v.get() + ";" + kdblprim_r.get() + ";" + kdblprim_i.get() + ";" + obs_lat.get() + ";" + obs_long.get() + ";" + obs_elev.get() + ";" +
             obslatdecimal + ";" + obslongdecimal + ";\n")
         outputline.append(newline)
     config_file.close()
     config_file = open("Photometry_Transform_Config_Data.txt","w")
     config_file.writelines(outputline)
     config_file.close()
-    MessageBox("Extinction Values Saved for " + ex_tel_id)
+    MessageBox("Extinction Values Saved for " + ex_tel_id + "\nBe certain to reload VPHOT files if testing transform coefficients")
     extinctwindow.destroy()
     
 
 
 def ex_tel_id_pick(event):
-    global ex_tel_id_box,ex_tel_id,kprime_u,kprime_b,kprime_v,kprime_r,kprime_i,kdblprim_b,obs_lat,obs_long,obs_elev
+    global ex_tel_id_box,ex_tel_id,kprime_u,kprime_b,kprime_v,kprime_r,kprime_i,kdblprim_b,kdblprim_v,kdblprim_r,kdblprim_i,obs_lat,obs_long,obs_elev
     ex_tel_id = ex_tel_id_box.get()
     config_file = open("Photometry_Transform_Config_Data.txt","r") # open file for reading
     for line in config_file:
@@ -2230,7 +2277,7 @@ def ex_tel_id_pick(event):
 #  Initialize with previous values or defaults
 #
         if aline[1] == ex_tel_id:
-            if len(aline) == 2:  # extinction data not present, set defaults
+            if len(aline) == 2 or len(aline) == 13 :  # extinction data not present or set before additiona k" -  set defaults
                 kprime_u.delete(0,END)
                 kprime_u.insert(0,"0.6")
                 kprime_b.delete(0,END)
@@ -2243,10 +2290,20 @@ def ex_tel_id_pick(event):
                 kprime_i.insert(0,"0.08")
                 kdblprim_b.delete(0,END)
                 kdblprim_b.insert(0,"0.01")
+                kdblprim_v.delete(0,END)
+                kdblprim_v.insert(0,"0.00")
+                kdblprim_r.delete(0,END)
+                kdblprim_r.insert(0,"0.00")
+                kdblprim_i.delete(0,END)
+                kdblprim_i.insert(0,"0.00")
                 obs_lat.delete(0,END)
                 obs_long.delete(0,END)
                 obs_elev.delete(0,END)
                 obs_elev.insert(0,"0")
+                if len(aline) == 13: # if previous file without all k", restore lat/long/elev
+                    obs_lat.insert(0,aline[8])
+                    obs_long.insert(0,aline[9])
+                    obs_elev.insert(0,aline[10])
                 
             else:
                 kprime_u.delete(0,END)
@@ -2261,19 +2318,25 @@ def ex_tel_id_pick(event):
                 kprime_i.insert(0,aline[6])
                 kdblprim_b.delete(0,END)
                 kdblprim_b.insert(0,aline[7])
+                kdblprim_v.delete(0,END)
+                kdblprim_v.insert(0,aline[8])
+                kdblprim_r.delete(0,END)
+                kdblprim_r.insert(0,aline[9])
+                kdblprim_i.delete(0,END)
+                kdblprim_i.insert(0,aline[10])
                 obs_lat.delete(0,END)
-                obs_lat.insert(0,aline[8])
+                obs_lat.insert(0,aline[11])
                 obs_long.delete(0,END)
-                obs_long.insert(0,aline[9])
+                obs_long.insert(0,aline[12])
                 obs_elev.delete(0,END)
-                obs_elev.insert(0,aline[10])
+                obs_elev.insert(0,aline[13])
                 
     return
 
 def extinction():
-    global ex_tel_id_box, extinctwindow, kprime_u,kprime_b,kprime_v,kprime_r,kprime_i,kdblprim_b,obs_lat,obs_long,obs_elev,extinction_setting
+    global ex_tel_id_box, extinctwindow, kprime_u,kprime_b,kprime_v,kprime_r,kprime_i,kdblprim_b,kdblprim_v,kdblprim_r,kdblprim_i,obs_lat,obs_long,obs_elev,extinction_setting
     extinctwindow = Toplevel()
-    extinctwindow.title("Set Up Exinction")
+    extinctwindow.title("Set Up Exinction - " + version)
     try:
         config_file = open("Photometry_Transform_Config_Data.txt","r") # open file for reading
     except:
@@ -2319,25 +2382,37 @@ def extinction():
     kprime_i.grid(row=6,column=1,sticky = "W")
     Label(extinctwindow, text = "  (Default = 0.08)", font = 12).grid(row = 6, column = 2, sticky = "W")
     Label(extinctwindow, text = " ", font = 12).grid(row=7,column=0)
-    Label(extinctwindow, text = "Enter Second Order Extinction Coefficient for b",font=12).grid(row=8,column=0,columnspan=2, sticky = "W")
-    Label(extinctwindow, text = 'k"b = ',font = 12).grid(row=9,column=0,sticky = "E") 
+    Label(extinctwindow, text = "Enter Second Order Extinction Coefficients",font=12).grid(row=8,column=0,columnspan=2, sticky = "W")
+    Label(extinctwindow, text = " ", font = 12).grid(row=9,column=0)
+    Label(extinctwindow, text = 'k"b = ',font = 12).grid(row=10,column=0,sticky = "E") 
     kdblprim_b = Entry(extinctwindow,font=12)
-    kdblprim_b.grid(row=9,column=1,sticky = "W")
-    Label(extinctwindow, text = "  (Default = 0.01)", font = 12).grid(row = 9, column = 2, sticky = "W")
-    Label(extinctwindow, text = " ", font = 12).grid(row=10,column=0)
-    Label(extinctwindow, text = "Enter Location of Observatory", font = 12).grid(row=11,column =0, columnspan=2, sticky = "W")
-    Label(extinctwindow, text = "Latitude (+/- DD.DDD or DD:MM:SS N/S)",font = 12).grid(row=12,column=0,columnspan=2, sticky = "E")
+    kdblprim_b.grid(row=10,column=1,sticky = "W")
+    Label(extinctwindow, text = "  (Default = 0.01)", font = 12).grid(row = 10, column = 2, sticky = "W")
+    Label(extinctwindow, text = 'k"v = ',font = 12).grid(row=11,column=0,sticky = "E") 
+    kdblprim_v = Entry(extinctwindow,font=12)
+    kdblprim_v.grid(row=11,column=1,sticky = "W")    
+    Label(extinctwindow, text = "  (Default = 0.00)", font = 12).grid(row = 11, column = 2, sticky = "W")
+    Label(extinctwindow, text = 'k"r = ',font = 12).grid(row=12,column=0,sticky = "E") 
+    kdblprim_r = Entry(extinctwindow,font=12)
+    kdblprim_r.grid(row=12,column=1,sticky = "W")    
+    Label(extinctwindow, text = "  (Default = 0.00)", font = 12).grid(row = 12, column = 2, sticky = "W")
+    Label(extinctwindow, text = 'k"i = ',font = 12).grid(row=13,column=0,sticky = "E") 
+    kdblprim_i = Entry(extinctwindow,font=12)
+    kdblprim_i.grid(row=13,column=1,sticky = "W")   
+    Label(extinctwindow, text = "  (Default = 0.00)", font = 12).grid(row = 13, column = 2, sticky = "W")
+    Label(extinctwindow, text = "Enter Location of Observatory", font = 12).grid(row=14,column =0, columnspan=2, sticky = "W")
+    Label(extinctwindow, text = "Latitude (+/- DD.DDD or DD:MM:SS N/S)",font = 12).grid(row=15,column=0,columnspan=2, sticky = "E")
     obs_lat = Entry(extinctwindow, font = 12)
-    obs_lat.grid(row = 12, column = 2, sticky = "W")
-    Label(extinctwindow, text = "Longitude (+/- DDD.DDD or DD:MM:SS E/W)",font = 12).grid(row = 13, column = 0, columnspan=2, sticky = "E")
+    obs_lat.grid(row = 15, column = 2, sticky = "W")
+    Label(extinctwindow, text = "Longitude (+/- DDD.DDD or DD:MM:SS E/W)",font = 12).grid(row = 16, column = 0, columnspan=2, sticky = "E")
     obs_long = Entry(extinctwindow, font = 12)
-    obs_long.grid(row = 13, column = 2, sticky = "W")
-    Label(extinctwindow, text = "Elevation (meters)", font = 12).grid(row=14,column = 0, columnspan=2, sticky = "E")
+    obs_long.grid(row = 16, column = 2, sticky = "W")
+    Label(extinctwindow, text = "Elevation (meters)", font = 12).grid(row=17,column = 0, columnspan=2, sticky = "E")
     obs_elev = Entry(extinctwindow,font = 12)
-    obs_elev.grid(row = 14, column = 2, sticky = "W")
-    Label(extinctwindow, text = " ").grid(row = 15)
-    Button(extinctwindow, text = "Save Extinction Values",command = save_extinction,font=12).grid(row=16,column=1)
-    Label(extinctwindow, text = "     ", font = 12).grid(row = 17, column = 3)
+    obs_elev.grid(row = 17, column = 2, sticky = "W")
+    Label(extinctwindow, text = " ").grid(row = 18)
+    Button(extinctwindow, text = "Save Extinction Values",command = save_extinction,font=12).grid(row=19,column=1)
+    Label(extinctwindow, text = "     ", font = 12).grid(row = 20, column = 3)
     
     
 #    raLabel = Label(extinctwindow,text=("RA (HH:MM:SS or DDD.xxx)"),font = 12).grid(row=1,column=0)
@@ -2359,14 +2434,250 @@ def extinction():
 ############################################################################################################
 
 ############################################################################################################
+#                                                                                                          #
+#                    Create Set of Optimized Transforms                                                    #
+#                                                                                                          #
+############################################################################################################
+    
+# save optimized transforms both internally and export file
+
+def save_opt_xforms():
+    global transform_names,transform_val,transform_val_err,transform_val_r2,meas_JD,tel_id,std_field_name,ext_used # from savetransforms function
+    global allxforms, status_box,test_xforms_str,test_xforms_err_str,loaderr # from loadsave_typedtransforms function
+    global best_xform_results, coef_being_optimized,status_box,save_opt_btn,output_file_xform_val_list,output_file_xform_err_list,output_file_xform_r2_list,msgwindow,transformtest
+    transform_names = []
+    transform_val = []
+    transform_val_err = []
+    transform_val_r2 = []
+    for j in range(len(coef_being_optimized)) :  # saving internal reacord of transforms
+        transform_names.append(coef_being_optimized[j])
+        transform_val.append(best_xform_results[j,0])
+        transform_val_err.append(best_xform_results[j,1])
+        transform_val_r2.append(999999.) # indicate no r squared possible
+    ext_used = "No"  # for now until extinction option added
+    msg = savetransforms_1() # saves internal copy for use on Review/Average Page
+    status_box.insert("end",msg + "\n")
+    status_box.see("end")
+#  set up save of TA ini file
+    output_file_xform_val_list = [] # start list to save lines of transform values
+    output_file_xform_err_list = [] # start list to save lines of tranform value errors
+    output_file_xform_r2_list = [] # start list to save lines of transform r squared values
+    for j in range(len(coef_being_optimized)):
+# output file data save
+        line = coef_being_optimized[j] + "= %5.3f" %  best_xform_results[j,0] # transform value line
+        output_file_xform_val_list.append(line)
+        line = coef_being_optimized[j] + "= %5.3f" %  best_xform_results[j,1] # transform value error line
+        output_file_xform_err_list.append(line)
+        line = coef_being_optimized[j] + "= %5.3f" %  999 # transform value r squared line - set to 999 to inidcate no good value
+        output_file_xform_r2_list.append(line)
+    msg = export_transforms_1(transformtest)
+    line = "\n" + msg + "\n"
+    status_box.insert("end",line)
+    status_box.see("end")
+    save_opt_btn.configure(state = "disabled")
+        
+    return
+
+# Create optimized transform values
+    
+def optimize_transforms():
+    global coef_anal,test_xforms_float,test_xforms_str,final_transforms_to_do,test_xforms_err_float,color_transforms_to_do,status_box,teit_filters,transforms_to_do,test_xforms_str
+    global detailed_print_setting,save_opt_btn, best_xform_results, coef_being_optimized,transformtest
+#
+#  detailed_print_setting =  "N" = don't print, "Y" = print  - controls detailed print in test transforms of every star/transform results  
+#    
+#
+    save_xforms = np.zeros(len(allxforms))  # for possible restore at end
+    for i in range(len(allxforms)):
+        save_xforms[i] = test_xforms_float[i]
+#
+#   Check that transforms available - if not, remove from planned calculations
+    final_transforms_to_do = []
+    final_transforms_bands = []  # track finals xforms to be done based on both images loaded and transforms provided
+    flen = len(teit_filters)
+    for k in range(len(transforms_to_do)):
+        if test_xforms_str[allxforms.index(transforms_to_do[k])] != "NA": 
+            final_transforms_to_do.append(transforms_to_do[k]) # add
+            if transforms_to_do[k][1:2] not in final_transforms_bands :
+                final_transforms_bands.append(transforms_to_do[k][1:2]) # add to list
+            if transforms_to_do[k][3:4] not in final_transforms_bands :
+                final_transforms_bands.append(transforms_to_do[k][3:4])
+            if transforms_to_do[k][4:5] not in final_transforms_bands :
+                final_transforms_bands.append(transforms_to_do[k][4:5])
+        else:
+            status_box.insert("end","No transforms for " + transforms_to_do[k] + "\n")
+            status_box.see("end")
+    color_transforms_to_do = []
+    for i in range(len(final_transforms_to_do)):
+        colorxform = "T" + final_transforms_to_do[i][3:5]
+        if colorxform not in color_transforms_to_do :
+            color_transforms_to_do.append(colorxform)
+    coef_being_optimized = final_transforms_to_do + color_transforms_to_do  #  currently not optimizing color - to be added later
+    best_xform_results = np.zeros((len(coef_being_optimized),2)) #       will hold best values for each transform after optimization      
+    avg_coef_error = np.zeros(len(coef_being_optimized))  # used when optimizing
+    num_steps = 50 # number of steps in transform values for optimization
+    test_various_xform_values = np.zeros((num_steps,(len(allxforms)))) # set up array of various transform values
+    coef_anal_comparison = np.zeros((num_steps,len(coef_being_optimized),8)) # coef_anal_comparison[k,l,m] = collection of data k=test set numer, l,m = coef analysis array items (as listed in coef_anal)
+    sigma_factor = 15 # range of transform values will be +/- transform err * sigma_factor
+#
+#  Progress bar
+#
+    pbar = ttk.Progressbar(transformtest,orient='horizontal',length=300,mode='determinate')
+    pbar.grid(row=20, column = 0,padx=2,pady=2,sticky="NESW")
+    for i in range(num_steps) : # for each set
+        for j in range(len(final_transforms_to_do)) :
+            test_various_xform_values[i,j] = test_xforms_float[allxforms.index(final_transforms_to_do[j])] + 2*sigma_factor/num_steps*(i-int(num_steps/2))*test_xforms_err_float[allxforms.index(final_transforms_to_do[j])]  # Range of values to test -save copy for set i=transform set,j=transform index in
+        for k in range(len(color_transforms_to_do)) :
+#            print("k, color_transforms_to_do, test_xforms_float[allxforms.index(color_transforms_to_do[k])] =", k, color_transforms_to_do, test_xforms_float[allxforms.index(color_transforms_to_do[k])] )
+            test_various_xform_values[i,k + len(final_transforms_to_do)] = test_xforms_float[allxforms.index(color_transforms_to_do[k])]
+#  Test magnitude coefficients holding color at initial value
+#    
+# for each magnitude transform_to_do vary values and analyze
+    for i in range(num_steps):  # analyze each set
+        pbar.step(2)
+        root.update()
+        time.sleep(0.1)
+        for j in range(len(final_transforms_to_do)):
+            test_xforms_float[allxforms.index(final_transforms_to_do[j])] = test_various_xform_values[i,j]
+        for k in range(len(color_transforms_to_do)):
+            test_xforms_float[allxforms.index(color_transforms_to_do[k])] = test_various_xform_values[i,k + len(final_transforms_to_do)]
+        status_box.insert("end","\n ------------------------ Optimization Run %sss -----------------------\n" % i)
+        analyze_transforms()
+#  Collect Transform Coefficient Analysis Data
+#            
+#
+# coef_anal = array [coefficient index in coeff_being_optimized, analysis data] 
+#              list of analysis data items - (0) number of stars (1) average abs error from reference w/o transform (2) average abs error from reference with transform,
+#                                            (3) std dev error w/o transform, (4) std dev error with transform, (5) # stars improved, (6) # stars same, (7) # stars worse
+#
+#  save analysis array from each tranform set and keep best magnitude transform value  
+#
+        for k in range(len(coef_being_optimized)) :
+            xformname = coef_being_optimized[k]
+            for m in range(8):
+                coef_anal_comparison[i,k,m] = coef_anal[k,m]
+            if i == 0:
+                best_xform_results[k,0] = test_various_xform_values[i,k]  # set starting value
+                avg_coef_error[k] = coef_anal[k,2]
+                best_xform_results[k,1] = test_xforms_err_float[allxforms.index(xformname)] # assume original sigma for this transform valud for optimied value
+            else:
+                if coef_anal[k,2] < avg_coef_error[k]:
+                    best_xform_results[k,0] = test_various_xform_values[i,k] # save new coefficient value with minimum error
+                    avg_coef_error[k] = coef_anal[k,2] # save new minimum value
+    print("New minimum detection - best_xform_results ", best_xform_results)
+#               
+# optimize color transforms using best magnitude transforms
+#       
+    for i in range(num_steps) : # for each set
+        for j in range(len(final_transforms_to_do)) :
+            test_various_xform_values[i,j] = best_xform_results[j,0] # load optimized mag transform value
+           
+#            test_various_xform_values[i,j] = test_xforms_float[allxforms.index(final_transforms_to_do[j])] + 2*sigma_factor/num_steps*(i-int(num_steps/2))*test_xforms_err_float[allxforms.index(final_transforms_to_do[j])]  # Range of values to test -save copy for set i=transform set,j=transform index in
+        for k in range(len(color_transforms_to_do)) :
+#            print("k, color_transforms_to_do, test_xforms_float[allxforms.index(color_transforms_to_do[k])] =", k, color_transforms_to_do, test_xforms_float[allxforms.index(color_transforms_to_do[k])] )
+            test_various_xform_values[i,k + len(final_transforms_to_do)] = test_xforms_float[allxforms.index(color_transforms_to_do[k])] + 2*sigma_factor/num_steps*(i-int(num_steps/2))*test_xforms_err_float[allxforms.index(color_transforms_to_do[k])]  
+
+    for i in range(num_steps):  # analyze each set
+        pbar.step(2)
+        root.update()
+        time.sleep(0.1)
+        for j in range(len(final_transforms_to_do)):
+            test_xforms_float[allxforms.index(final_transforms_to_do[j])] = test_various_xform_values[i,j]
+        for k in range(len(color_transforms_to_do)):
+            test_xforms_float[allxforms.index(color_transforms_to_do[k])] = test_various_xform_values[i,k + len(final_transforms_to_do)]
+        status_box.insert("end","\n ------------------------ Optimization Run %sss -----------------------\n" % i)
+        analyze_transforms()
+#  Collect Transform Coefficient Analysis Data
+#            
+#
+# coef_anal = array [coefficient index in coeff_being_optimized, analysis data] 
+#              list of analysis data items - (0) number of stars (1) average abs error from reference w/o transform (2) average abs error from reference with transform,
+#                                            (3) std dev error w/o transform, (4) std dev error with transform, (5) # stars improved, (6) # stars same, (7) # stars worse
+#
+#  save analysis array from each tranform set and keep best magnitude transform value  
+#
+        for k in range(len(final_transforms_to_do),len(coef_being_optimized)) :
+            xformname = coef_being_optimized[k]
+            for m in range(8):
+                coef_anal_comparison[i,k,m] = coef_anal[k,m]
+            if i == 0:
+                best_xform_results[k,0] = test_various_xform_values[i,k]  # set starting value
+                avg_coef_error[k] = coef_anal[k,2]
+                best_xform_results[k,1] = test_xforms_err_float[allxforms.index(xformname)] # assume original sigma for this transform valud for optimied value
+            else:
+                if coef_anal[k,2] < avg_coef_error[k]:
+                    best_xform_results[k,0] = test_various_xform_values[i,k] # save new coefficient value with minimum error
+                    avg_coef_error[k] = coef_anal[k,2] # save new minimum value
+    print("New minimum detection - best_xform_results ", best_xform_results)
+    
+# progress bar removal
+    pbar.destroy()
+    
+    
+    table = "" # start collection of print information for summary table
+    for j in range(len(coef_being_optimized)): # print row section for each transform value, rows for each test set
+        xformname = coef_being_optimized[j]
+
+        if detailed_print_setting.get() == "Y":
+            line = "\n" + 60*"-" + "\n\nDetailed Optimization Print for " + xformname + "\n\nTest Transform Value\t\tMag Est Err\t\tMag Est Err\n\t\t no xform\t\tw test transform\n "
+            print(line)
+#            status_box.insert("end",line)
+        
+        for k in range(num_steps):  # print row for each test set - xform value, average error no transform, average error with transform
+            if detailed_print_setting.get() == "Y":
+                print("\n%7.3f\t\t%7.3f\t%7.3f" % (test_various_xform_values[k,coef_being_optimized.index(xformname)],coef_anal_comparison[k,j,1], coef_anal_comparison[k,j,2]))
+#                status_box.insert("end","\n%7.3f\t\t%7.3f\t%7.3f" % (test_various_xform_values[k,coef_being_optimized.index(xformname)],coef_anal_comparison[k,j,1], coef_anal_comparison[k,j,2]))
+            if k == 0:
+                best_xform_results[j,0] = test_various_xform_values[k,j]
+                avg_error = coef_anal_comparison[k,j,2]
+                best_xform_results[k,1] = test_xforms_err_float[allxforms.index(xformname)] # assume original sigma for this transform valud for optimied value
+            else:
+                if coef_anal_comparison[k,j,2] < avg_error:
+                    best_xform_results[j,0] = test_various_xform_values[k,j]
+                    avg_error = coef_anal_comparison[k,j,2]
+                    best_xform_results[j,1] = test_xforms_err_float[allxforms.index(xformname)] # assume original sigma for this transform valud for optimied value
+                    
+        table = table + "\n%5s\t\t%7.3f\t\t%7.3f\t\t%7.3f\t\t%7.3f" % (xformname, best_xform_results[j,0],avg_error,save_xforms[allxforms.index(xformname)],coef_anal_comparison[int(num_steps/2),j,2])
+#
+#    Fix mag transforms at best and vary color transforms to optimize
+#
+    
+    
+    
+    
+    
+    
+    status_box.insert("end","\n\n                      Optimized Transform Set - Comparison to Original\n\n")
+    status_box.insert("end","\n\t\tOpt xform  \t\txform mag err\t\tOrig xform\t\txform mag err")
+    status_box.insert("end","\n\t\t Value\t\t\w opt xform\t\tValue\t\tw orig xform")
+    status_box.insert("end",table)
+    status_box.insert("end","\n")
+    status_box.insert("end","\n" + 40*"*" + "\n")
+    status_box.see("end")
+    for i in range(len(allxforms)):  # Restore orginal transforms
+        test_xforms_float[i] = save_xforms[i]
+    save_opt_btn.configure(state = "active", activebackground = "#E0FFFF",bg="#E0FFFF")
+    return
+
+        
+    
+        
+            
+
+
+############################################################################################################
 #
 #                   Perform Analysis of Transform Set on Loaded Image
 #
 ############################################################################################################
 def analyze_transforms():
     global allxforms,test_xforms_float,test_xforms_str, test_xforms_err_float, test_xforms_err_str,img_set_filters
-    global status_box, transforms_to_do,teit,num_ref_stars,teit_test_star_auid, num_test_stars,teit_filters
-    global img_set_filters
+    global status_box,img_set_filters,coef_anal,final_transforms_to_do,detailed_print_setting,coef_anal,color_transforms_to_do
+    global max_num_test_stars,teit,teit_test_star_auid,save_opt_btn,comp_star_setting,auid_comp_star,plot_data
+    
+#
+#  detailed_print_setting =  "N" = don't print, "Y" = print  - controls detailed print in test transforms of every star/transform results  
+#    
     
 #      
 ##
@@ -2374,13 +2685,17 @@ def analyze_transforms():
 #  teit format - because of VPHOT erratic star id numbering use B-V to identify standard stars - and allow for later
 #       addition of TEIT_AUID list of  AUID's matching each row in TEIT
 ##
-#       first index star id (matches star_id_list)
+#       first index star id (matches teit_test_star_auid list - i.e.  teit[m,] has AUID of teit_test_star_auid[m])
 #       Second number :
 #       Column 0 -  B-V of reference star
 #       Column 1-(2*cur_filt) - standard star reference mag and error - format U, Uerr, B, Berr, etc.
 #       Column 2*num_filt +1 -> 2*num_filt + 3*cur_filt - machine mag, err, airmass - formt u,uerr,uairmass,b,berr,bairmass etc.
 #
 #   Check that transforms available - if not, remove from planned calculations
+    line = "\n" + + 10*"&" + "     START OF SINGLE TEST OF TRANSFORMATION COEFFICIENTS     " + 20*"&" + "\n"
+    status_box.insert("end",line)
+    
+    save_opt_btn.configure(state="disabled") # disable save button for previous optimized transforms since new set being evaluated/created
     final_transforms_to_do = []
     final_transforms_bands = []  # track finals xforms to be done based on both images loaded and transforms provided
     flen = len(teit_filters)
@@ -2402,32 +2717,75 @@ def analyze_transforms():
 #
     comp_star_ref_mags = np.zeros((len(teit_filters),2)) # slots for mag, mag erors
     comp_star_inst_mags = np.zeros((len(teit_filters),2))
-    lowest_error = 100  # set up to count lowest error mag across all filters of images loaded
-    for i in range(num_test_stars):
-        num_filt_w_data = 0
-        avg_error = 0
-        for j in range(5) : # all filters
-            if teit_filters[j].lower() not in final_transforms_bands :  # check if filter in final transform plan
-                continue
-            num_filt_w_data += 1
-            avg_error = ((num_filt_w_data - 1)*avg_error + teit[i,2*j + 2])/num_filt_w_data
+#
+#
+#  Set up array to save data for plotting of transforms vs actual star data
+#          plot_data[x,y,z] where x is star number, y is transform identifier , z (0) is untransformed mag minus ref, z(1) is color difference of target minus comp, z(2) = untransformed mag error
+#                z(3) is transformed mag minus ref, z(4) is transformed mag estimate error
+    plot_data = np.zeros((max_num_test_stars,len(final_transforms_to_do),5))
+#
+#  Get comp star option setting and set up as requested
+#
+#
+    if comp_star_setting.get() == "MinError" :  # Minimum abs error across all bands selected
+        lowest_error = 100  # set up to count lowest error mag across all filters of images loaded
+        for i in range(max_num_test_stars):
+            num_filt_w_data = 0
+            avg_error = 0
+            for j in range(flen): #range(5) : # all filters
+                if teit[i,2*j+2] == 0 : # go to next star if star doesn't have alues for all filters
+                    break
+                num_filt_w_data += 1
+                avg_error = ((num_filt_w_data - 1)*avg_error + teit[i,2*j + 2])/num_filt_w_data
             if avg_error < lowest_error and avg_error != 0 :  # ignore star with bad data
                 lowest_error = avg_error
                 comp_star_id = teit_test_star_auid[i]
-                comp_star_id_index = i
                 for j in range(5):
                     comp_star_ref_mags[j,0] = teit[i,2*j +1] # comp ref mag
                     comp_star_ref_mags[j,1] = teit[i,2*j +2] # comp ref error
                     comp_star_inst_mags[j,0] = teit[i,2*flen + 3*j + 1] # comp instrument mag
                     comp_star_inst_mags[j,1] = teit[i,2*flen + 3*j + 2] # comp instrument mag error
-    status_box.insert("end","\nComp Star Selected for test field is " + comp_star_id + "\nAverage magnitude error %05.3f" % lowest_error)
-    status_box.insert("end","\nBand\tRef Mag\tErr")
-    for i in range(5):
-        if teit_filters[i].lower() in final_transforms_bands:
-            status_box.insert("end","\n  " + teit_filters[i] + "\t %05.3f \t %05.3f" % (comp_star_ref_mags[i,0], comp_star_ref_mags[i,1]))
-    status_box.insert("end","\n")
-    status_box.see("end")
-    
+                    
+    elif comp_star_setting.get() == "Ensemble" : # Ensemble selected
+        test_star_count = np.zeros(flen)
+        comp_star_id = "Ensemble of all Reference Stars"
+        for i in range(max_num_test_stars):
+            for j in range(flen):
+                if teit[i,2*flen + 3*j + 1] == 0 :  # test if instrument magnitude available - if not, skip this band
+                    continue
+                else:
+                    comp_star_ref_mags[j,0] += teit[i,2*j + 1] # add current ref mag to total
+                    comp_star_inst_mags[j,0] += teit[i,2*flen + 3*j + 1] # add current instrument mag to totak
+                    comp_star_ref_mags[j,1] += teit[i,2*j + 2]**2 # add square of error for ref mag
+                    comp_star_inst_mags[j,1] += teit[i,2*flen + 3*j + 2]**2 # add square of error for instrument mags
+                    test_star_count[j] += 1  # add 1 to star count for this filter
+        for j in range(flen):  
+            comp_star_ref_mags[j,0] = comp_star_ref_mags[j,0] / test_star_count[j]
+            comp_star_ref_mags[j,1] = math.sqrt(comp_star_ref_mags[j,1] / test_star_count[j])
+            if comp_star_inst_mags[j,0] != 0 : # be sure measurements were taken
+                comp_star_inst_mags[j,1] = math.sqrt(comp_star_inst_mags[j,1] / test_star_count[j])
+                comp_star_inst_mags[j,0] = comp_star_inst_mags[j,0] / test_star_count[j] # error
+
+    else:  # must be auid input
+        comp_star_id = auid_comp_star.get().strip() # remove any spaces in comp star auid
+        for i in range(len(teit_test_star_auid)) :
+            if comp_star_id == teit_test_star_auid[i]:
+                break
+            if i != len(teit_test_star_auid) - 1:
+                continue
+            else:
+                Errormsg("Comp Star " + comp_star_id + " not in field")
+                return
+        for j in range(flen):
+            comp_star_ref_mags[j,0] = teit[i,2*j + 1]
+            comp_star_inst_mags[j,0] = teit[i, 2*flen + 3*j + 1]
+            comp_star_ref_mags[j,1] = teit[i, 2*j + 2]
+            comp_star_inst_mags[j,1] = teit[i, 2*flen + 3*j + 2]
+        
+            
+            
+
+
 #
 #
 #  Butild Transformation Matrix
@@ -2436,21 +2794,44 @@ def analyze_transforms():
 ##
 ##  xform_matrix - for each star (index 1) and transform done (index 2) - third index = (0)ref mag, (1)ref error, (2)untransformed mag, (3)untransformed mag error,
 ##                  (4)untransformed mag minus ref mag, (5)transformed mag, (6)transformed mag error, (7)transformed mag minus ref mag
-##    
-    xform_matrix = np.zeros((num_test_stars,len(final_transforms_to_do),8))
-    status_box.insert("end","\n\n***************************** ANALYSIS RESULTS  *********************************************************************************")
-    status_box.insert("end","\nStar AUID\tBand\tColor\tRefMag\tnot xform\tdel\txform\tdel\tImprov (+yes/-no)")
-    status_box.see("end")
-    xformRef_err = 0
-    xformRef_err_squared = 0
-    no_xformRef_err = 0
-    no_xformRef_err_squared = 0
-    sample_num = 0.0
-    num_improved = 0
-    num_no_change = 0
-    num_worse = 0
+##    c
+    if detailed_print_setting.get() == "Y":  # print validation test data
+        print(" " + 50*"*" + "\n" + 50*"*" + "\n")
+        print("                    TRANSFORMATION VALIDATION TESTING DATA")
+        print("\n\nComp Star AUID - ",comp_star_id)
+        print("\n   U\t   B\t   V\t   R\t   I\t\t   u\t   b\t   v\t   r\t   i")
+        print("%7.3f\t%7.3f\t%7.3f\t%7.3f\t%7.3f\t\t%7.3f\t%7.3f\t%7.3f\t%7.3f\t%7.3f" % (comp_star_ref_mags[0,0],comp_star_ref_mags[1,0],comp_star_ref_mags[2,0],
+                comp_star_ref_mags[3,0],comp_star_ref_mags[4,0],comp_star_inst_mags[0,0],comp_star_inst_mags[1,0],comp_star_inst_mags[2,0],
+                comp_star_inst_mags[3,0],comp_star_inst_mags[4,0]))
+#    print("\n\ncomp_star_ref_mags,comp_star_inst_mags = ",comp_star_ref_mags,comp_star_inst_mags)
+    xform_matrix = np.zeros((max_num_test_stars,len(final_transforms_to_do),8))
+    if detailed_print_setting.get() == "Y" :
+        status_box.insert("end","\n\n***************************** ANALYSIS RESULTS  *********************************************************************************")
+        table_columns = "\n\nStar AUID\t        B-V\t     Band\tColor\tRefMag\tno xform\tno xf err\txform adj\t xform\t xf err\tImprov (+yes/-no)\n"
+        status_box.insert("end",table_columns)
+        status_box.see("end")
     final_test_star_auids = []
-    for i in range(num_test_stars):  # star id in teit_star_auid[i]
+    display_lines = 0
+#
+#  Determin what color transfors to analyze
+#
+    color_transforms_to_do = []
+#    print("final_transforms_to_do = ",final_transforms_to_do)
+    for i in range(len(final_transforms_to_do)):
+        colorxform = "T" + final_transforms_to_do[i][3:5]
+        if colorxform not in color_transforms_to_do :
+            color_transforms_to_do.append(colorxform)
+    coef_anal = np.zeros((len(final_transforms_to_do) + len(color_transforms_to_do) ,8)) # coefficient analysis array - defined below
+##
+#
+#    Start transformation of every star
+#
+#
+    if detailed_print_setting.get() == "Y":
+        print("\n Transformation Coefficients")
+        for m in range(len(allxforms)):
+            print("%s\t%7.3f" % (allxforms[m],test_xforms_float[m]))
+    for i in range(max_num_test_stars):  # star id in teit_star_auid[i]
         for j in range(len(final_transforms_to_do)): # transform_name in transforms_to_do[j]
             band = final_transforms_to_do[j][1:2]  # will be u,b,v,r,i
             band_index = teit_filters.index(band.upper())
@@ -2472,53 +2853,136 @@ def analyze_transforms():
 #       Column 1-(2*cur_filt) - standard star reference mag and error - format U, Uerr, B, Berr, etc.
 #       Column 2*num_filt +1 -> 2*num_filt + 3*cur_filt - machine mag, err, airmass - formt u,uerr,uairmass,b,berr,bairmass etc.
 #
-# check for missing data - skip star
+# check for missing data - skip star for this transform
 #
-            if ( teit[i,2*flen + 3*color1_index + 1] == 0 or teit[i,2*flen + 3*color2_index + 1] == 0 ) :
+            if ( teit[i,2*flen + 3*color1_index + 1] == 0 or teit[i,2*flen + 3*color2_index + 1] == 0
+                or teit[i,2*flen + 3*band_index + 1] == 0  or comp_star_inst_mags[color1_index,0] == 0 or comp_star_inst_mags[color2_index,0] == 0 ) :
                 continue  # not all measurements available
+#                
+#  Limit stars to B-V > .5
+#
+#            if abs(teit[i,3] - teit[i,5]) < 0.5 :
+#                continue
+                
+            untransformed_mag_estimate = comp_star_ref_mags[band_index,0] + teit[i,2*flen + 3*band_index + 1] - comp_star_inst_mags[band_index,0] # untransformed mag estimate
+            untransformed_mag_error = untransformed_mag_estimate - xform_matrix[i,j,0]
+            if abs(untransformed_mag_error) > .5 :  # appears to be bad star measurement - do not use
+                continue
+            if detailed_print_setting.get() == "Y" :
+                if display_lines == 32:
+                    status_box.insert("end",table_columns)
+                    display_lines = 0
+                display_lines += 1
             if teit_test_star_auid[i] not in final_test_star_auids:
                 final_test_star_auids.append(teit_test_star_auid[i])
-            xform_matrix[i,j,2] = comp_star_ref_mags[band_index,0] + teit[i,2*flen + 3*band_index + 1] - comp_star_inst_mags[band_index,0] # untransformed mag estimate
-            xform_matrix[i,j,4] = xform_matrix[i,j,2] - xform_matrix[i,j,0] # untransformed minus ref = untransformed error
+            xform_matrix[i,j,2] = untransformed_mag_estimate # untransformed mag estimate] 
+            xform_matrix[i,j,3] = math.sqrt(comp_star_inst_mags[band_index,1]**2 + comp_star_ref_mags[band_index,1]**2 + teit[i,2*flen + 3*band_index + 2]**2)  # untransformed mag est err
+            xform_matrix[i,j,4] = untransformed_mag_error # untransformed minus ref = untransformed error
             color_transform_name = "T" + color1 + color2
-            print("\nteit[i,2*flen + 3*color1_index + 1],teit[i,2*flen + 3*color2_index + 1],comp_star_inst_mags[color1_index,0],comp_star_inst_mags[color2_index,0]",teit[i,2*flen + 3*color1_index + 1],teit[i,2*flen + 3*color2_index + 1],comp_star_inst_mags[color1_index,0],comp_star_inst_mags[color2_index,0])
+#            print("\nteit[i,2*flen + 3*color1_index + 1],teit[i,2*flen + 3*color2_index + 1],comp_star_inst_mags[color1_index,0],comp_star_inst_mags[color2_index,0]",teit[i,2*flen + 3*color1_index + 1],teit[i,2*flen + 3*color2_index + 1],comp_star_inst_mags[color1_index,0],comp_star_inst_mags[color2_index,0])
             delta = test_xforms_float[allxforms.index(color_transform_name)]*(
                     (teit[i,2*flen + 3*color1_index + 1] - teit[i,2*flen + 3*color2_index + 1]) 
                     - (comp_star_inst_mags[color1_index,0] - comp_star_inst_mags[color2_index,0]))
-            xform_matrix[i,j,5] = xform_matrix[i,j,2] + test_xforms_float[allxforms.index(final_transforms_to_do[j])] * delta # transformed magnitude
+            delta_err1 = test_xforms_err_float[allxforms.index(color_transform_name)]*math.sqrt(teit[i,2*flen + 3*color1_index + 1]**2 + teit[i,2*flen + 3*color2_index + 1]**2 + (
+                    (comp_star_inst_mags[color1_index,0]**2 + comp_star_inst_mags[color2_index,0]**2))) 
+            delta_err2 = test_xforms_float[allxforms.index(color_transform_name)]*(math.sqrt(teit[i,2*flen + 3*color1_index + 2]**2 + teit[i,2*flen + 3*color2_index + 2]**2 + (
+                    (comp_star_inst_mags[color1_index,1]**2 + comp_star_inst_mags[color2_index,1]**2))))
+            delta_err3 = test_xforms_err_float[allxforms.index(color_transform_name)]*(math.sqrt(teit[i,2*flen + 3*color1_index + 2]**2 + teit[i,2*flen + 3*color2_index + 2]**2 + (
+                    (comp_star_inst_mags[color1_index,1]**2 + comp_star_inst_mags[color2_index,1]**2))))
+            delta_err = math.sqrt(delta_err1**2 + delta_err2**2 + delta_err3**2)
+#            print("\ntest_xforms_float[allxforms.index(color_transform_name)],delta = ",test_xforms_float[allxforms.index(color_transform_name)],delta)
+#
+#   collect data for plotting transforms vs actual measurments
+#
+            plot_data[i,j,0] = untransformed_mag_error  # difference between untransformed mag and reference mag
+            plot_data[i,j,2] = xform_matrix[i,j,3] # untransformed_mag_error measurement error 
+            plot_data[i,j,1] = (teit[i,2*flen + 3*color1_index + 1] - teit[i,2*flen + 3*color2_index + 1]) - (
+                    comp_star_inst_mags[color1_index,0] - comp_star_inst_mags[color2_index,0])  # delta color difference target minus comp
+
+#
+#
+            xformamount = test_xforms_float[allxforms.index(final_transforms_to_do[j])] * delta
+            xform_matrix[i,j,5] = xform_matrix[i,j,2] + xformamount # transformed magnitude
+            xform_matrix[i,j,6] = math.sqrt(untransformed_mag_error**2 + delta_err**2)
             xform_matrix[i,j,7] = xform_matrix[i,j,5] - xform_matrix[i,j,0] # transformed minus ref = transformed error
             xform_improvement = abs(xform_matrix[i,j,4]) - abs(xform_matrix[i,j,7]) # positive is improvement, negative worse
-            if xform_improvement > 0:
-                num_improved += 1
-            elif xform_improvement == 0:
-                num_no_change +=1
-            else :
-                num_worse += 1
-                
+            ref_B_minus_V = teit[i,3] - teit[i,5] # ref mag B - V
+            
+            plot_data[i,j,3] = xform_matrix[i,j,7] # transformed mag minus reference mag
+            plot_data[i,j,4] = math.sqrt(xform_matrix[i,j,6]**2 + comp_star_ref_mags[band_index,1]**2) # transformed mag minus reference mag error
             
             
-            text = "\n%11s\t%2s\t%2s\t%8.3f\t%8.3f\t%8.3f\t%8.3f\t%8.3f\t%6.3f" %(teit_test_star_auid[i],band,color,xform_matrix[i,j,0],xform_matrix[i,j,2],
-                                                                                  xform_matrix[i,j,4],xform_matrix[i,j,5],xform_matrix[i,j,7],xform_improvement)
-            status_box.insert("end",text)
-            xformRef_err = xformRef_err + xform_matrix[i,j,7]
-            xformRef_err_squared = xformRef_err_squared + xform_matrix[i,j,7]**2
-            no_xformRef_err = no_xformRef_err + xform_matrix[i,j,4]
-            no_xformRef_err_squared = no_xformRef_err_squared + xform_matrix[i,j,4]**2
-            sample_num += 1
-    num = xformRef_err/sample_num
-    status_box.insert("end","\n\nWith transforms average error = %05.3f" % num)
-    num = math.sqrt(xformRef_err_squared/sample_num)
-    status_box.insert("end","\nWith transforms error standard deviation = %05.3f" % num)
-    num = no_xformRef_err/sample_num
-    status_box.insert("end","\nWithout transform average error = %05.3f" % num)
-    num = math.sqrt(no_xformRef_err_squared/sample_num)
-    status_box.insert("end","\nWithout transform error standard deviation = %05.3f" % num)
-    status_box.insert("end","\nNumber of stars in test = %d" % len(final_test_star_auids))
-    status_box.insert("end","\n\nNumber of test star measurements with improved accuracy = %d"  % num_improved)
-    status_box.insert("end","\nNumber of test star measurementswith same accuracy = %d" % num_no_change)
-    status_box.insert("end","\nNumber of test star measurements with worse accuracy = %d " % num_worse)
+            text = "\n%11s\t%8.3f\t%2s\t%2s\t%8.3f\t%8.3f\t%8.3f\t%8.3f\t%8.3f\t%8.3f\t%6.3f" %(teit_test_star_auid[i],ref_B_minus_V,band,color,xform_matrix[i,j,0],xform_matrix[i,j,2],
+                                                                                  xform_matrix[i,j,4],xformamount,xform_matrix[i,j,5],xform_matrix[i,j,7],xform_improvement)
+            if detailed_print_setting.get() == "Y":
+                status_box.insert("end",text)
+#  Collect Transform Coefficient Analysis Data
+#            
+#
+# coef_anal = array [coefficient index in final transforms_to_do + color_transforms_to_do, analysis data] 
+#              list of analysis data items - (0) number of stars (1) average abs error from reference w/o transform (2) average abs error from reference with transform,
+#                                            (3) std dev error w/o transform, (4) std dev error with transform, (5) # stars improved, (6) # stars same, (7) # stars worse
+#
+#      Add data to both color transform and magnitude transform data
+            list = [j,len(final_transforms_to_do) + color_transforms_to_do.index("T" + color)]
+            for k in list :
+                an = coef_anal[k,0] # number of previous stars for use in computing accumulating average
+                coef_anal[k,0] = coef_anal[k,0] + 1 # number of stars measured with this transform coefficient (final_transforms_to_do[j])
+                coef_anal[k,1] = (coef_anal[k,1]*an + abs(xform_matrix[i,j,4]))/(an + 1) # average abs(error) without transform
+                coef_anal[k,2] = (coef_anal[k,2]*an + abs(xform_matrix[i,j,7]))/(an + 1) # average abs(error) with transform
+                coef_anal[k,3] = np.sqrt((an*(coef_anal[k,3])**2 + xform_matrix[i,j,4]**2)/(an + 1)) # std dev error w/o transforms
+                coef_anal[k,4] = np.sqrt((an*(coef_anal[k,4])**2 + xform_matrix[i,j,7]**2)/(an + 1)) # std dev error with transforms
+#
+#  Limit counting to larger corrections
+#
+#                if abs(xform_matrix[i,j,4] - xform_matrix[i,j,7]) > 0.02:  # line added to count larger corrections only
+                if abs(xform_matrix[i,j,4] - xform_matrix[i,j,7]) < 0.01 : # tolerance to inlcude star in count of minimal change < .01
+                    coef_anal[k,6] += 1 # count as minimal change
+                elif abs(xform_matrix[i,j,4]) > abs(xform_matrix[i,j,7]) : # transform improved accuracy
+                    coef_anal[k,5] += 1
+                else:
+                    coef_anal[k,7] += 1 # error worse
+        if detailed_print_setting.get() == "Y":
+            stepsize = int(max_num_test_stars/10.) + 1 
+            if float(i/stepsize) == int(i/stepsize) :  # randomly pick 10 of stars to test
+                print("\n" + 75*"-" + "\nTest Star AUID = ",teit_test_star_auid[i])
+                print("\n   B-V\t   U\t   B\t   V\t   R\t   I\n%7.3f\t%7.3f\t%7.3f\t%7.3f\t%7.3f\t%7.3f" % (teit[i,0],teit[i,1],teit[i,3],teit[i,5],teit[i,7],teit[i,9]))
+                print("\n\n\t   u\t   b\t   v\t   r\t   i\n\t%7.3f\t%7.3f\t%7.3f\t%7.3f\t%7.3f" % (teit[i,11],teit[i,14],teit[i,17],teit[i,20],teit[i,23]))
+                print(("\n" + 5*("\tairmass") + "\n\t" + 5*("%8.3f")) % (teit[i,13],teit[i,16],teit[i,19],teit[i,22],teit[i,25]))
+                print("\nResults:\n\nTransform\tFilter\t   Ref\t\t   Not\t\t xformed\n\t\t\t   Mag\t\t xformed\n")
+                for mn in range(len(final_transforms_to_do)):
+                    filter = final_transforms_to_do[mn][1:2].upper()
+                    print("\n %s\t\t%s\t%8.3f\t%8.3f\t%8.3f" % (final_transforms_to_do[mn],filter,xform_matrix[i,mn,0],xform_matrix[i,mn,2],xform_matrix[i,mn,5]))
+
+
+    status_box.insert("end","\n\nComp Star Used for test field - " + comp_star_id )
+    status_box.insert("end","\nBand\tRef Mag\tErr")
+    for i in range(5):
+        if teit_filters[i].lower() in final_transforms_bands:
+            status_box.insert("end","\n  " + teit_filters[i] + "\t %05.3f \t %05.3f" % (comp_star_ref_mags[i,0], comp_star_ref_mags[i,1]))
+    status_box.insert("end","\n")
     status_box.see("end")
-    return
+
+    status_box.insert("end","\n\n*******      Coefficient Analysis  ***********")
+    status_box.insert("end","\nCoef\tCoef\t# star\tavg err\tavg err\tstd dev\tstd dev\t#improv\t# within\t#worse\n")
+    status_box.insert("end","\tvalue\ttests\tno xform\tw/xform\tno xform\tw/xform\t\t  .01")
+    for i in range(len(final_transforms_to_do) + len(color_transforms_to_do)) :
+        if i < len(final_transforms_to_do) :
+            xformname = final_transforms_to_do[i]
+        else:
+            xformname = color_transforms_to_do[i-len(final_transforms_to_do)]
+        coef_value = test_xforms_float[allxforms.index(xformname)]
+        format = "\n%5s\t%7.3f\t%5d\t%8.3f\t%8.3f\t%8.3f\t%8.3f\t%d\t%d\t%d"
+        status_box.insert("end",format % (xformname,coef_value,coef_anal[i,0],coef_anal[i,1],coef_anal[i,2],coef_anal[i,3],coef_anal[i,4],coef_anal[i,5],coef_anal[i,6],coef_anal[i,7]))
+    status_box.see("end")
+    line = "\n\n" + 10*"&"  + "     END OF SINGLE TEST OF TRANSFORMATION COEFFICIENTS     " + 20*"&" + "\n"
+    status_box.insert("end",line)
+#  INDENT STOP FOR COMP STAR TEST
+
+
+
+
+    return comp_star_id
 #
 #  END OF TRANSFORM ANALYSIS
 #
@@ -2529,17 +2993,21 @@ def analyze_transforms():
 
 def loadini():
     global allxforms,test_xforms_float,test_xforms_str, test_xforms_err_float, test_xforms_err_str,translabel
-    global status_box
+    global status_box,transformtest,perf_anal_btn,plot_xform_anal_btn, create_opt_btn, save_opt_btn, xforms_and_images_loaded
 # initialize
-
-    inifilename = askopenfilename()
+    test_xforms_str = [] # intialize 
+    test_xforms_err_str = [] #initialize
+    for i in range(len(allxforms)) :
+        test_xforms_str.append("NA")
+        test_xforms_err_str.append("NA")
+    test_xforms_err_float = np.zeros(len(allxforms)) # initialize float of errors
+    test_xforms_float = np.zeros(len(allxforms)) # initialize float of values
+    inifilename = askopenfilename(title = "Select File in TA ini format of Transformation Coefficients to be tested",parent=transformtest)
     xformini = open(inifilename,"r") # open file for reading
     coef_start = "N"  # keep as No until [Coefficients] line found
     error_start = "N" # keep as No until [Error] line found
     for i in range(len(allxforms)) :
-        test_xforms_float[i] = 0
         test_xforms_str[i] = "NA"
-        test_xforms_err_float[i] = 0
         test_xforms_err_str[i] = "NA"
     for line in xformini :
         delim = ["=","="]
@@ -2580,6 +3048,17 @@ def loadini():
         text = a + "\t" + b + "\t" + c
         status_box.insert("end",text + "\n")
     status_box.see("end")
+# xforms_and_images_loaded = "N" # set up indicator if anlysis data loaded - N=none,I=images,T=Transforms,TI = images and transforms
+    print("xfi]orms_and_images_loaded = ",xforms_and_images_loaded)
+
+    if xforms_and_images_loaded == "N":
+        xforms_and_images_loaded = "T"
+    elif xforms_and_images_loaded == "I":
+        xforms_and_images_loaded = "TI"
+        perf_anal_btn.configure(state="active", bg="#E0FFFF", activebackground = "#E0FFFF")
+        plot_xform_anal_btn.configure(state="active", bg="#E0FFFF", activebackground = "#E0FFFF")
+        create_opt_btn.configure(state="active", bg="#E0FFFF", activebackground = "#E0FFFF")
+        save_opt_btn.configure(state="active", bg="#E0FFFF", activebackground = "#E0FFFF")
     transformtest.lift()
     
             
@@ -2591,18 +3070,18 @@ def loadini():
 #
 def loadtypedtransforms():
     global allxforms, status_box,test_xforms_float,test_xforms_str,test_xforms_err_float,test_xforms_err_str,tflabels,tferrlabels,errwindow,loaderr
-    global transformtest,typeintransforms
+    global transformtest,typeintransforms,perf_anal_btn ,plot_xform_anal_btn, create_opt_btn, save_opt_btn,xforms_and_images_loaded
 # Load values 
     loaderr = 0
     try:
         for i in range(len(allxforms)):
             test_xforms_str[i] = tflabels[i].get()
-            if test_xforms_str[i] == ("" or "None"):
+            if (test_xforms_str[i] == "") or (test_xforms_str[i] == "None") or (test_xforms_str[i] == "NA") :
                 test_xforms_str[i] = "NA"
             else:
                 test_xforms_float[i] = float(test_xforms_str[i])
             test_xforms_err_str[i] = tferrlabels[i].get()
-            if test_xforms_err_str[i] == ("" or "None"):
+            if (test_xforms_err_str[i] == "") or (test_xforms_err_str[i] == "None") or (test_xforms_err_str[i] == "NA"):
                 test_xforms_err_str[i] = "NA"
             else:
                 test_xforms_err_float[i] = float(test_xforms_err_str[i])
@@ -2625,13 +3104,22 @@ def loadtypedtransforms():
         text = a + "\t" + b + "\t" + c
         status_box.insert("end",text + "\n")
     status_box.see("end")
+# xforms_and_images_loaded = "N" # set up indicator if anlysis data loaded - N=none,I=images,T=Transforms,TI = images and transforms
+    if xforms_and_images_loaded == "N":
+        xforms_and_images_loaded = "T"
+    elif xforms_and_images_loaded == "I":
+        xforms_and_images_loaded = "TI"
+        perf_anal_btn.configure(state="active", bg="#E0FFFF")
+        plot_xform_anal_btn.configure(state="active",bg="#E0FFFF")
+        create_opt_btn.configure(state="active", bg="#E0FFFF")
+        save_opt_btn.configure(state="active",bg="#E0FFFF")    
     transformtest.lift()
     typeintransforms.destroy()
     return
 
 # load transforms from menu for analysis AND create TA ini file of these values
 def loadsave_typedtransforms():
-    global allxforms, status_box,test_xforms_float,test_xforms_str,test_xforms_err_float,test_xforms_err_str,tflabels,tferrlabels,loaderr
+    global allxforms, status_box,test_xforms_str,test_xforms_err_str,loaderr
     loadtypedtransforms() # Load typed in values into array
     if loaderr == 1:
         return  # let user fix error
@@ -2640,7 +3128,7 @@ def loadsave_typedtransforms():
                                 title = "Enter Name to be used for Saved Transforms File")
     curtime = strftime("%Y_%m_%d_%H:%M:%S",gmtime())
     avg_xforms_record = "[Setup]\ndescription= TG" + version 
-    avg_xforms_record = avg_xforms_record + "Time created (UT) = "+ curtime + " Saved When User Entered Transforms manually using TG Transform Test Processing\n"
+    avg_xforms_record = avg_xforms_record + "Time created (UT) = "+ curtime + " Saved When User Either Entered Transforms manually or Saved Optimized Transforms\n"
     avg_xforms_record = avg_xforms_record + "[Coefficients]\n"
     errorlist = ""
     for i in range(len(allxforms)): 
@@ -2652,7 +3140,7 @@ def loadsave_typedtransforms():
     export_file.write(avg_xforms_record)
     export_file.close()
     fname = export_file.name
-    MessageBox("Transforms Saved at UT\n" + curtime + " to file\n" + fname)    
+    status_box.insert("end", "Transforms Saved at UT\n" + curtime + " to TA ini format file\n" + fname + "\n\n")    
     transformtest.lift()
 
     return
@@ -2660,7 +3148,16 @@ def loadsave_typedtransforms():
 
 def entertransforms():
     global allxforms, status_box,test_xforms_float,test_xforms_str,test_xforms_err_float,test_xforms_err_str,tflabels,tferrlabels
-    global typeintransforms
+    global typeintransforms,xform_manual_entry_started
+
+    test_xforms_str = [] # intialize 
+    test_xforms_err_str = [] #initialize
+    for i in range(len(allxforms)) :
+        test_xforms_str.append("NA")
+        test_xforms_err_str.append("NA")
+    test_xforms_err_float = np.zeros(len(allxforms)) # initialize float of errors
+
+
     typeintransforms = Toplevel()
     typeintransforms.title("Enter Transform Values")
     w, h = root.winfo_screenwidth(), root.winfo_screenheight()
@@ -2676,12 +3173,22 @@ def entertransforms():
         Label(typeintransforms,text=allxforms[i],font=12).grid(row=i+2,column=0,pady=2, sticky = "E", padx=1)
         tflabels[i] = Entry(typeintransforms, width = 8,font=12)
         tflabels[i].grid(row=i+2,column=1,pady=2)
-        tflabels[i].delete(0,END)  # clear previous text
-        tflabels[i].insert(0,"None")
         tferrlabels[i] = Entry(typeintransforms, width = 8,font = 12)
         tferrlabels[i].grid(row=i+2,column=2,pady=2)
-        tferrlabels[i].delete(0,END)
-        tferrlabels[i].insert(0,"None")
+        if xform_manual_entry_started == 0:
+            tflabels[i].delete(0,END)  # clear previous text
+            tflabels[i].insert(0,"None")
+            xform_manual_entry_started = 0 # set indicator for next use
+            tferrlabels[i].delete(0,END)
+            tferrlabels[i].insert(0,"None")
+        else:  # restore previous values
+            tflabels[i].delete(0,END)
+            tflabels[i].insert(0,test_xforms_str[i])
+            tferrlabels[i].delete(0,END)
+            tferrlabels[i].insert(0,test_xforms_err_str[i])
+       
+    xform_manual_entry_started = 1 # set for next uses during this rus to use saved xforms
+
     Button(typeintransforms,text="Use for analysis",command=loadtypedtransforms,font=12).grid(row=len(allxforms)+4,column=1,pady=2,columnspan=2)
     btn2 = Button(typeintransforms,text="Use for analysis AND\nSave .ini TA Format file",command=loadsave_typedtransforms,font=12)
     btn2.grid(row=len(allxforms)+5,column=1,pady=2,columnspan=2)
@@ -2689,11 +3196,38 @@ def entertransforms():
 
 # function to load VPHOT images of transform test field
 def vphotload():
-    global transformtest,teit,teit_filters,num_filt,status_box, transforms_to_do,num_ref_stars
+    global transformtest,teit,teit_filters,num_filt,status_box, transforms_to_do,num_ref_stars,test_xforms_float
     global star_id_list,star_id_list_label,std_field_mags,std_field_star_count,searchfield,sf_col_list # variables for reference star mag retrieval
-    global num_test_stars, teit_test_star_auid,img_set_filters
+    global max_num_test_stars, teit_test_star_auid,img_set_filters,meas_JD,std_field_name,extinction_setting,tel_id,detailed_print_setting
+    global perf_anal_btn, plot_xform_anal_btn, create_opt_btn, save_opt_btn, xforms_and_images_loaded
     transformtest.lift()
-    fn = askopenfilenames() # get VPHOT files of Standard Field Observation
+#
+#  Define Major Tables for testing transforms
+#
+#  teit = Transform Evaluation Input Table - numpy array
+    teit_filters = ["U","B","V","R","I"]  # set up to allow easy program additions for other fiters
+    num_filt = len(teit_filters)  # number of filters
+##
+#  teit format - because of VPHOT erratic star id numbering use B-V to identify standard stars - and allow for later
+#       addition of TEIT_AUID list of  AUID's matching each row in TEIT
+##
+#       Column 0 -  B-V of reference star
+#       Column 1-(2*cur_filt) - standard star reference mag and error - format U, Uerr, B, Berr, etc.
+#       Column 2*num_filt +1 -> 2*num_filt + 3*cur_filt - machine mag, err, airmass - formt u,uerr,uairmass,b,berr,bairmass etc.
+#
+# 
+#   tat = Transform Analysis Table
+#
+#       Column 0 - B-V of reference star
+#       Column 1 - xform identifier (Ta_bc) where a is filter and bc color filters
+#       Column 2 - [(0)untransformed mag; (1)untransformed mag error; (2)transformed mag;(3)transformed mag error;
+#                  (4)reference minus untransformed mag;(5)reference minus untransformed mag error;
+#                  (6)reference minus transformed mag; (7)reference minus transformed mag error]
+#
+#    Inirialize
+
+    teit = np.zeros((500,5*num_filt + 1)) # allow up to 500 reference stars - maybe change later to count
+    fn = askopenfilenames(title = "Select VPHOT files for Transform Coefficient Test",parent=transformtest) # get VPHOT files of Standard Field Observation
     std_field_files = root.tk.splitlist(fn)
     if len(std_field_files) > 5:
         Errormsg("Maximum of 5 files")
@@ -2707,13 +3241,14 @@ def vphotload():
 ###### copy insert to be cleaned up
     
     vphot_star_id = []
-    for i in range(500):  # nax number of vphot comps allowed is 500 minus the number of old Boulder ids - added later
+    for i in range(500):  # nax number of vphot comps allowed is 500 
         vphot_star_id.append(" ")    # create array with vphot id's tied to AUID  (star_id_list)
     vphot_col_list = ["Vphot_Star_id","IM","SNR","X","Y","Sky","Air","B-V","Ref-mag","Target estimate","Active"]
     srow = -1 # initialize index of last row with valid data in teit
     img_set_filters = [] #Set filter used list to empty
     meas_JD = "None"
     obs_date = []
+    max_num_test_stars = 0 # track the maximum number of test stars across this set of VPHOT images - will be max searched in teit
     for file_i in range(len(std_field_files)): # process each file listed
         measurements = open(std_field_files[file_i],mode="r")  # retrieve instrument measurements file
         starline_found = "N"
@@ -2724,6 +3259,8 @@ def vphotload():
             delim = ["\t",":"]  # tab delimeter
             lineparse(oneline,aline,delim)
             if starline_found == "N": #process header lines
+                if aline[0][:14] == "Primary target":
+                    std_field_name = aline[1]
                 if aline[0][:7] == "Filter":  # find Filter line.
                     currentfilter = aline[1].lower().strip()
                     img_set_filters.append(currentfilter) # add filter to list of what has been loaded
@@ -2779,24 +3316,22 @@ def vphotload():
             teit[star_row, 2*cur_filt + 1] = float(aline[vphot_col_list.index("Ref-mag")]) # Reference Mag
             if aline[vphot_col_list.index("Active")]  == "True" : # ensure good measurement
                 teit[star_row, 2*num_filt + 3*cur_filt + 1] = float(aline[vphot_col_list.index("IM")]) # Instrument Mag
-                teit[star_row, 2*num_filt + 3*cur_filt + 2] = 1/float(aline[vphot_col_list.index("SNR")]) # instrument mag error
+                teit[star_row, 2*num_filt + 3*cur_filt + 2] = 1/float(aline[vphot_col_list.index("SNR")].replace(" ","")) # instrument mag error
             teit[star_row, 2*num_filt + 3*cur_filt + 3] = float(aline[vphot_col_list.index("Air")]) # star air mass
 #
 #
 #  Match B-V of reference field stars to AUID - store auid and reference star error mags (ref mags from VPHOT file - duplicate)
 #
-    num_test_stars = srow  # number of stars in VPHOT loaded field measured by user
+    num_test_stars = srow  # number of stars in VPHOT loaded field measured by user for this band
+    if num_test_stars > max_num_test_stars :
+        max_num_test_stars = num_test_stars # keep maximum number of test stars across loaded set of VPHOT images for teit max star number
     searchfield = "ra=" + searchra + "&dec=" + searchdec
     retrieve_std_mags()  # load standard mag information from AAVSO VSP data base
 # global star_id_list,star_id_list_label,std_field_mags,std_field_star_count,searchfield,sf_col_list    
 #            sf_col_list = ["RA","Dec","U","B","V","R","I"] # list names of each column in std_field_mags array
 
-    for i in range(srow):
-        print("std_field_mags = ",std_field_mags[i,])
     teit_test_star_auid = []
     num_ref_stars = std_field_star_count # from standard field retrieval, number of reference stars
-    print("\n\nnum_test_stars,num_ref_stars = ",num_test_stars,num_ref_stars)
-    print("\nSTART AUID MATCH*****************************************")
     for i in range(num_test_stars): # for each test star in table
         matchfound = "N"
 #
@@ -2812,7 +3347,6 @@ def vphotload():
                     for m in range(len(teit_filters)) : # for U,B,V,R,I
                         teit[i,2*m + 2] = std_field_mags[j,sf_col_list.index(teit_filters[m]) + 5] # store ref star error measures
                     teit_test_star_auid.append(star_id_list[j]) #  store AUID - fixing VPHOT problem!
-                    print("\ni,j,star_id_list[j] ",i,j,star_id_list[j])
                     matchfound = "Y"
                     break # go to next test star
             if matchfound == "Y":
@@ -2822,12 +3356,80 @@ def vphotload():
         if matchfound == "N":
             teit_test_star_auid.append("NoAUID")
             Errormsg("AUID match to star not found - 'NoAUID' will be identifier")
-    print("len(teit_test_star_auid= )",len(teit_test_star_auid))
-    
-    for k in range(len(teit_test_star_auid)):
-        print("\n\nk,teit_test_star_auid[k],teit[k,] = ", k, teit_test_star_auid[k],teit[k,])
+#    
+#   Apply Extinction if requested
+#
+##
+#  teit format - because of VPHOT erratic star id numbering use B-V to identify standard stars - and allow for later
+#       addition of TEIT_AUID list of  AUID's matching each row in TEIT, teit[star,column]
+##
+#       Column 0 -  B-V of reference star
+#       Column 1-(2*cur_filt) - standard star reference mag and error - format U, Uerr, B, Berr, etc.
+#       Column 2*num_filt +1 -> 2*num_filt + 3*cur_filt - machine mag, err, airmass - formt u,uerr,uairmass,b,berr,bairmass etc.
+#
+#   
+#   Test if extinction requested
+#                    print("Entry extinction_setting = ",extinction_setting.get())
+    if extinction_setting.get() == "Y" : 
+#   Test if scope has extinction setup
+#
+            config_file = open("Photometry_Transform_Config_Data.txt","r") # open telescope info file
+            for line in config_file:
+                aline = []  # hold parsed line
+                lineparse(line,aline,[";",";"]) # on ; is delimiter
+#                print("\naline, telescopename, len(aline) ",aline,telescopename, len(aline))
+#                print("aline[1], telescopename,len(aline)",aline[1], telescopename,len(aline))
+                if (aline[1] == tel_id) and (len(aline) == 16): # found extinction record
+                    ext_aline = aline # save all telescope data including extinction, observatory location
+#                    print("ext_aline, ",ext_aline)
+# Format of telescope line "ext_aline" -  #  'Telescope id';ex_tel_id;k'u;k'b;k'v;k'r;k'i;k"b,k"v,k"r,k"i,;obs_lat;obs_long;obs_elev;obslatdecimal;obslongdecimal,\n
+
+                    kprime_u = aline[2]
+                    kprime_b = aline[3]
+                    kprime_v = aline[4]
+                    kprime_r = aline[5]
+                    kprime_i = aline[6]
+                    kdblprime_b = aline[7]
+                    kdblprime_v = aline[8]
+                    kdblprime_r = aline[9]
+                    kdblprime_i = aline[10]
+                    break # valid extinction record
+                elif aline[1] == tel_id : # means no extinction values set
+                    Errormsg("Extinction Requested but telescope has no extinction setup\nSet Up at Extinction Settings and rerun")
+                    return
+# Apply extinction using VPHOT airmass
+            kprime_list = [kprime_u,kprime_b,kprime_v,kprime_r,kprime_i]
+            kdblprime_list = [0,kdblprime_b,kdblprime_v,kdblprime_r,kdblprime_i] # leading zero since no kdblprime_u
+            num_report_stars = int(num_test_stars/10) + 1 # number of stars in report if requested
+            if detailed_print_setting.get() == "Y":
+                print(50*"*" + "\n              Extinction Verification Test Data - executed during transform testing VPHOT load - vphotload()\n")
+                print("Current Extinction Coefficients -")
+                print("\n\t\tk'u\tk'b\tk'v\tk'r\tk'i\n\t\t%s\t%s\t%s\t%s\t%s\n" % (kprime_u,kprime_b,kprime_v,kprime_r,kprime_i))
+                print('\t\tk"b\tk"v\tk"r\n\t\t%s\t%s\t%s\n' % (kdblprime_b,kdblprime_v,kdblprime_r))
+           
+            for i in range(num_test_stars):
+                printlines = "off"
+                if float(i/num_report_stars) == int(i/num_report_stars) and detailed_print_setting.get() == "Y": # pick off stars for printing
+                    printlines = "on"
+                    print("\n\nStar AUID = ",teit_test_star_auid[i])
+                    print("Filter\t Before\t After\t Diff\tAirmass\n\t Ext\t Ext")                            
+                for j in range(len(kprime_list)) :  # also index of filters - u,b,v,r,i
+                    if teit[i, 11 + 3*j] == 0 :  # test for measurement
+                        continue # if none, go to next filter
+
+                    save_pre_extinction = teit[i,11+3*j]
+                    if j == len(kprime_list) : # if last entry on list
+                        teit[i,11+3*j] = teit[i,11+3*j] - teit[i,11 + 3*j + 2] * float(kprime_list[j])  # apply first order extinction only for i filter until see if there is a way to handle
+                    else:
+                        teit[i,11+3*j] = teit[i,11+3*j] - float(kprime_list[j]) * teit[i,(11 + 3*j + 2)] - float(kdblprime_list[j])*teit[i, 11 + 3*j + 2]*(teit[i, 1 + 2*j] - teit[i, 1 + 2*(j+1)])
+                    if printlines == "on" :
+                        print("%s\t%7.3f\t%7.3f\t%7.3f\t%7.3f" % (teit_filters[j].lower(),save_pre_extinction,teit[i,11 + 3*j],teit[i,11+3*j]-save_pre_extinction,teit[i,11+3*j+2]))
+            status_box.insert("end","\nExtinction Applied \t\tk'u\tk'b\tk'v\tk'r\tk'i\n\t\t%s\t%s\t%s\t%s\t%s\n" % (kprime_u,kprime_b,kprime_v,kprime_r,kprime_i))
+            status_box.insert("end",'\t\tk"b\tk"v\tk"r\n\t\t%s\t%s\t%s\n' % (kdblprime_b,kdblprime_v,kdblprime_r))
+    else:
+        status_box.insert("end","\nNo Extinction Applied")
     radec = "RA = " + ra + "  Dec = " + dec
-    text = "VPHOT Measurements Loaded for " + targetname + "\n" + radec 
+    text = "\n\nVPHOT Measurements Loaded for " + targetname + "\n" + radec 
     status_box.insert("end",text + "\n\n")
     text = "Image Dates - filters"
     status_box.insert("end",text + "\n")
@@ -2859,23 +3461,259 @@ def vphotload():
             transforms_to_do.append("Tr_vi")
     if len(transforms_to_do) == 0 :
         Errormsg("Insufficient Filters for Any Analysis - reload images")
+        
+    if xforms_and_images_loaded == "N":
+        xforms_and_images_loaded = "I"
+    elif xforms_and_images_loaded == "T": # Transforms already loaded - activate analysis buttons
+        xforms_and_images_loaded = "TI"
+        perf_anal_btn.configure(state="active", bg="#E0FFFF", activebackground = "#E0FFFF")
+        plot_xform_anal_btn.configure(state="active", bg="#E0FFFF", activebackground = "#E0FFFF")
+        create_opt_btn.configure(state="active", bg="#E0FFFF", activebackground = "#E0FFFF")
+        save_opt_btn.configure(state="active", bg="#E0FFFF", activebackground = "#E0FFFF")
+
     return
             
-##############################################################################
+###################################################################################################
+###################################################################################################
 #
-#   Test Transforms Main Program Window Creation
+#    PLOT TRANSFORM ANALYSIS DATA - MAIN WINDOW CREATION
 #
-##############################################################################
+###################################################################################################
+###################################################################################################
+def xform_to_plot_pick(event):  # function executed when user selects transform to plot
+    global xform_select_box,plot_data_full,final_transforms_to_do,max_num_test_stars,comp_star_id_list,test_xforms_float,test_xforms_str,allxforms,tel_id,std_field_name
+    global annotate_tgt_setting
+    xform_to_plot = xform_select_box.get()
+    x = np.zeros((max_num_test_stars))
+    y = np.zeros((max_num_test_stars))
+    y1 = np.zeros((max_num_test_stars))
+    bottom1 = np.zeros((6,2)) # for stack segment totals for bar plotting - index as next line
+    group_count = np.zeros((6,2)) # for counting 0-.01,.01-.02, .02-.03, .03-.04, .04-.05, > .05 for untransformed (second index 0) and transformed (second index 1)
+    y1err_data = np.zeros((max_num_test_stars))
+    yerr_data = np.zeros((max_num_test_stars))
+    xmin,xmax = 10,-10  # will force initial values
+    plt.figure(figsize = (9,9) )
+    color_list = ["b","g","r","c","m","y","k","b","g","r"]
+    marker_list = ["o","1","2","3","4","s","*","+","x","D"]
+#
+#  Get transform coefficients used
+#
+    xform_color = "T" + xform_to_plot[3:5]
+    x_axis_label = xform_to_plot[3:4] + "-" + xform_to_plot[4:5]  # e.g. b-v
+    y_axis_label = xform_to_plot[1:2] # e.g. b
+    color_xform = test_xforms_float[allxforms.index(xform_color)]
+    mag_xform = test_xforms_float[allxforms.index(xform_to_plot)]
+    for i in range(len(comp_star_id_list)):
+        tgt_name = []
+        for j in range(max_num_test_stars):
+            x[j] = plot_data_full[i,j,transforms_to_do.index(xform_to_plot),1] # color difference tgt vs. comp  - e.g. (btgt - vtgt) - (bcomp - vcomp)
+            if x[j] < xmin:
+                xmin = x[j]
+            if x[j] > xmax:
+                xmax = x[j]
+            y[j] = plot_data_full[i,j,transforms_to_do.index(xform_to_plot),0] # untransformed minus reference magnitude
+            yerr_data[j] = plot_data_full[i,j,transforms_to_do.index(xform_to_plot),2] # untransformed minus reference magnitude instrument measurement error
+            tgt_name.append(teit_test_star_auid[j])
+        if detailed_print_setting.get() == "Y":
+            print("x,y,yerr =",x,y,yerr_data)
+        format1 = color_list[i] + marker_list[i]
+        plt.errorbar(x,y,yerr = yerr_data, fmt = format1, elinewidth = 2, ecolor = color_list[i], label = comp_star_id_list[i])
+        if annotate_tgt_setting.get() == "Y":
+            for j in range(len(tgt_name)):
+                plt.annotate(tgt_name[j][4:],xy = (x[j],y[j]), xytext = (x[j] + .01,y[j]))
+#    
+#  Plot Data
+#
+    plt.legend(bbox_to_anchor=(.90,1), loc = 0)
+    y_val_xmin = -mag_xform * color_xform * xmin # predicted error = negative error correction
+    y_val_xmax = - mag_xform * color_xform * xmax
+    plt.plot([xmin,xmax],[y_val_xmin,y_val_xmax],linestyle='-',label = "Predicted Error")
+    plt.plot([xmin,xmax],[y_val_xmin - .02, y_val_xmax - .02],linestyle = ":")
+    plt.plot([xmin,xmax],[y_val_xmin + .02, y_val_xmax + .02],linestyle = ":")
+
+    text = ("Telescope - " + tel_id + "   Field - " + std_field_name + "     Transforms - " + xform_to_plot + " = %7.3f    " + xform_color + " = %7.3f") % (mag_xform,color_xform)
+    text1 = ("Predicted Line = - " + xform_color + " * " + xform_to_plot + " * (Tgt/Comp Color Difference)" + "\n\n")
+    plt.title("\n" + text + "\n" + text1)
+    plt.xlabel("Color Difference [ (" + x_axis_label + ")tgt - ("  + x_axis_label + ")comp ]")
+    plt.ylabel(y_axis_label + " Filter Untransformed Magnitude Minus Reference Magnitude" )
+#
+#  Plot number of measuremtns within .01 deltas from ref mag both before and after transform
+#
+    
+    plt.figure(figsize = (9,9))
+    
+# group_ count  for counting 0-.01,.01-.02, .02-.03, .03-.04, .04-.05, > .05 for untransformed (second index 0) and transformed (second index 1)    
+    for i in range(len(comp_star_id_list)):
+        for j in range(max_num_test_stars):
+            xf_delta_meas = abs(plot_data_full[i,j,transforms_to_do.index(xform_to_plot),3]) # transformed minus reference magnitude
+            not_xf_delta_meas = abs(plot_data_full[i,j,transforms_to_do.index(xform_to_plot),0]) # not transformed minus reference magnitude
+            if detailed_print_setting.get() == "Y":
+                print("xf_delta_meas,not_xf_delta_meas ",xf_delta_meas,not_xf_delta_meas)
+            for k in range(5):
+                if (not_xf_delta_meas > k/100.0) and (not_xf_delta_meas <= (k+1)/100.0) :
+                    group_count[k,0] += 1
+                    
+                if xf_delta_meas > k/100.0 and xf_delta_meas <= (k+1)/100.0 :
+                    group_count[k,1] += 1
+            if not_xf_delta_meas > 0.05 :
+                group_count[5,0] +=1
+            if xf_delta_meas > 0.05 :
+                group_count[5,1] += 1
+    
+    bar_locations = np.arange(2)
+    p1 = plt.bar(bar_locations,group_count[0,],color = 'r')
+    bottom1[0,] = group_count[0,]
+    p2 = plt.bar(bar_locations,group_count[1,],bottom = bottom1[0,],color = 'b')
+    bottom1[1,] = bottom1[0,] + group_count[1,]
+    p3 = plt.bar(bar_locations,group_count[2,],bottom = bottom1[1,],color = 'g')
+    bottom1[2,] = bottom1[1,] + group_count[2,]
+    p4 = plt.bar(bar_locations,group_count[3,],bottom = bottom1[2,],color = 'c')
+    bottom1[3,] = bottom1[2,] + group_count[3,]
+    p5 = plt.bar(bar_locations,group_count[4,],bottom = bottom1[3,],color = 'm')
+    bottom1[4,] = bottom1[3,] + group_count[4,]
+    p6 = plt.bar(bar_locations,group_count[5,],bottom = bottom1[4,],color = 'y')
+    bottom1[5,] = bottom1[4,] + group_count[5,]
+    labels = [] 
+    for i in range(5):
+        limits = (("%4.2f - %4.2f") % (i/100.0,(i+1)/100.0))
+        labels.append(limits)
+    labels.append((" > %4.2f") % (0.05))
+    for j in range(2) :
+        for i in range(6):
+            if group_count[i,j] != 0:
+                if i == 0:
+                    plt.text(j,bottom1[0,j]/2,str(int(group_count[0,j])) + " cases within " + labels[0] + " mag",va="center", ha="center")
+                elif i < 5:
+                    plt.text(j,(bottom1[i-1,j] + group_count[i,j]/2), str(int(group_count[i,j])) + " cases within " + labels[i] + " mag", va="center", ha="center")
+                else:
+                    plt.text(j,(bottom1[i-1,j] + group_count[i,j]/2), str(int(group_count[i,j])) + " cases " + labels[i] + " mag", va="center", ha="center")
+    plt.title("Difference of Reference Mags with Untransformed and Transformed Observations\n" + text)
+    plt.xlabel("Untransformed                                                                       Transformed",ha="center")
+    plt.ylabel("Number of Test Cases")
+    plt.xticks([])
+    plt.show() 
+    
+    return
+
+
+    
+def plot_xform_anal(): # main window creation program for plotting transform analysis information
+    global plot_data,max_num_test_stars,teit,final_transforms_to_do,comp_star_setting,detailed_print_setting,xform_select_box,comp_star_id_list,plot_data_full,annotate_tgt_setting
+    global num_plot_comps
+
+    plot_xform_window = Toplevel()
+    plot_xform_window.title("Plot Transform Test Data - " + version)
+    w, h = root.winfo_screenwidth(), root.winfo_screenheight()
+    plot_xform_window.geometry("%dx%d+0+0" % (.9*w, .9*h))
+    info = Label(plot_xform_window,text = "Current test field and transforms will be tested with different comp stars\nDetails of each run will show in Status Box on Prevous Screen (Test Transform Coefficients Window\n ",font=16)
+    info.grid(row=0,column = 0, columnspan = 2)
+    
+ 
+#
+#  determine set of comp stars to use in analysis for plotting
+#
+#   See if user wants one comp or max comps
+#
+#Label(transformtest, text = "Plots - number of comps", font = 16).grid(row=2,column=4, sticky = E) # widen column 5 for next radiobuttons
+#    num_plot_comps = StringVar()
+#    num_plot_comps.set("Max")
+#    Radiobutton(transformtest,text= " 1 ",value = "1",font=12,variable = num_plot_comps).grid(row=2,column=5,sticky = E)
+#    Radiobutton(transformtest,text= "Max (<=10)",value = "Max",font=12,variable = num_plot_comps).grid(row=2,column=6,sticky = W)
+    if num_plot_comps.get() == "Max" :
+        flen = 5 # number of filters
+        comp_star_id_list = []
+        plot_data_full = np.zeros((10,max_num_test_stars,11,5)) # sized to maximum number of transforms possible (11)
+        count = 0
+        for i in range(max_num_test_stars):
+            for j in range(flen): #range(5) : # all filters
+                if teit[i,2*j+2] == 0 : # go to next star if star doesn't have reference values for all filters
+                    break
+            comp_star_id_list.append(teit_test_star_auid[i])
+            count += 1 # count number of comp stars found
+            if count == 10:  # take first 10 stars with data on all filters - may change later to be more selective in fields with large number of stars
+                break
+        num_comp_stars = count # save number of comp stars
+        comp_star_setting.set("AUID") # set so analyze transforms will use AUID
+        for n in range(num_comp_stars):
+            auid_comp_star.set(comp_star_id_list[n])
+            analyze_transforms()
+    #        
+    #  save plot values
+    #
+            for i in range(max_num_test_stars):
+                for j in range(len(final_transforms_to_do)):
+                    for k in range(5):
+                        plot_data_full[n,i,j,k] = plot_data[i,j,k] # comp star number, tiet star number, transforms index in final_transforms_to_do,
+    #                            0 difference between untransformed mag and reference mag - 1= color difference star vs comp -delta(b-v) - 2= untransformed instrument mag measurement error
+                    if detailed_print_setting.get() == "Y":
+                        print("compstar[n],n,i,j,plot_data_full[n,i,j,] %s %s %d  %d  %d %7.3f  %7.3f  %7.3f " % (comp_star_id_list[n],comp_star_id_list[i],n,i,j,plot_data_full[n,i,j,0],plot_data_full[n,i,j,1],plot_data_full[n,i,j,2]))
+    else:  # User only wants one comp star that they selected
+        compid = analyze_transforms() # this will select option defining comp star to use - and return comp star id
+        num_comp_stars = 1
+        plot_data_full = np.zeros((1,max_num_test_stars,11,5)) # sized to maximum number of transforms possible (11)
+        comp_star_id_list = []
+        comp_star_id_list.append(compid)
+
+    #        
+    #  save plot values
+    #
+        for i in range(max_num_test_stars):
+            for j in range(len(final_transforms_to_do)):
+                for k in range(5):
+                    plot_data_full[0,i,j,k] = plot_data[i,j,k] # comp star number, tiet star number, transforms index in final_transforms_to_do,
+#                            0 difference between untransformed mag and reference mag - 1= color difference star vs comp -delta(b-v) - 2= untransformed instrument mag measurement error
+                if detailed_print_setting.get() == "Y":
+                    print("compstar[n],n,i,j,plot_data_full[n,i,j,] %s %s %d  %d  %d %7.3f  %7.3f  %7.3f " % (comp_star_id_list[0],comp_star_id_list[i],0,i,j,plot_data_full[0,i,j,0],plot_data_full[0,i,j,1],plot_data_full[0,i,j,2]))
+
+#
+#   Add dropdown combo box allowing selection of transform to plot
+#
         
+    Label(plot_xform_window, text = "Annotate Plot with Target Star AUID ?",font=16).grid(row=1,column = 0, sticky = E)
+    annotate_tgt_setting = StringVar()
+    annotate_tgt_setting.set("N") # set default
+    Radiobutton(plot_xform_window, text = "Yes", value = "Y", font=12, variable = annotate_tgt_setting).grid(row=1,column=1,sticky=W)
+    Radiobutton(plot_xform_window, text = "No", value = "N", font=12, variable = annotate_tgt_setting).grid(row=1,column=1,sticky=E)
+    
+    
+    
+    
+    
+    
+    Label(plot_xform_window, text = " ",font=12).grid(row=2,column=0)
+    Label(plot_xform_window,text = "Select Transform to plot",font=16,bg="#E0FFFF").grid(row=3,column=0,sticky = "E")
+    xform_to_plot_var = StringVar()
+    xform_select_box = ttk.Combobox(plot_xform_window,width=12,textvariable=xform_to_plot_var,values=final_transforms_to_do,font=16)
+    xform_select_box.state(['readonly'])
+    xform_select_box.bind("<<ComboboxSelected>>",xform_to_plot_pick)
+    xform_select_box.current(0)
+    xform_select_box.grid(row=4,column=1)
+    
+    
+    
+    return
+    
+
+
+
+
+
+
+
+
+
+
+
 def test_transforms():
     global transformtest,teit_filters,num_filt,teit,tat,tat_col_ref,test_xforms_float,test_xforms_str,allxforms
-    global test_xforms_err_str, test_xforms_err_float,status_box
+    global test_xforms_err_str, test_xforms_err_float,status_box,detailed_print_setting,save_opt_btn,comp_star_setting,auid_comp_star
+    global num_plot_comps,create_opt_btn, perf_anal_btn, plot_xform_anal_btn
 #
 #  Define Major Tables for testing transforms
 #
 #  teit = Transform Evaluation Input Table - numpy array
-    teit_filters = ["U","B","V","R","I"]  # set up to allow easy program additions for other fiters
-    num_filt = len(teit_filters)  # number of filters
+#    teit_filters = ["U","B","V","R","I"]  # set up to allow easy program additions for other fiters
+#    num_filt = len(teit_filters)  # number of filters
 ##
 #  teit format - because of VPHOT erratic star id numbering use B-V to identify standard stars - and allow for later
 #       addition of TEIT_AUID list of  AUID's matching each row in TEIT
@@ -2895,31 +3733,69 @@ def test_transforms():
 #
 #    Inirialize
 
-    teit = np.zeros((500,5*num_filt + 1)) # allow up to 500 reference stars - maybe change later to count
-    test_xforms_float = np.zeros(len(allxforms)) # float of transform values in sequence of allxforms
-    test_xforms_str = [] # intialize 
-    test_xforms_err_str = [] #initialize
-    for i in range(len(allxforms)) :
-        test_xforms_str.append("NA")
-        test_xforms_err_str.append("NA")
-    test_xforms_err_float = np.zeros(len(allxforms)) # initialize float of errors
+#    teit = np.zeros((500,5*num_filt + 1)) # allow up to 500 reference stars - maybe change later to count
+#    test_xforms_float = np.zeros(len(allxforms)) # float of transform values in sequence of allxforms
 
 # Create window    
-    
     transformtest = Toplevel()
-    transformtest.title("Test Transform Sets With Standard Field")
+    transformtest.title("Test Transform Sets With Standard Field - " + version)
     w, h = root.winfo_screenwidth(), root.winfo_screenheight()
-    transformtest.geometry("%dx%d+0+0" % (.95*w, .9*h))
-    Label(transformtest, text="Transforms Evaluation Test",font=14).grid(row=0,column=2)
-    Button(transformtest,text="Load VPHOT files of Standard Field \nto use for test - 5 or less files",font=12,command=vphotload,bg="#E0FFFF").grid(row=1,column=0,columnspan=2,sticky = "W")
-    Label(transformtest, text="Load or enter Transform Coefficients: ",font=12).grid(row=2,column=0,pady=5)
-    Button(transformtest,text="Load .ini file\n (TA Format)",font=12,command=loadini,bg="#E0FFFF").grid(row=2,column=1,padx=2,sticky = "E")
-    Button(transformtest,text="Type in transform\n coefficients",font=12,command=entertransforms,bg="#E0FFFF").grid(row=2,column=2,sticky = "W",padx=2)
-    Label(transformtest,text="STATUS INFORMATION", font = 12).grid(row=1,column=4,sticky="W",pady=5,padx=5)
-    status_box = tkst.ScrolledText(transformtest,width=85,height=35,wrap=WORD,font=12)
-    status_box.grid(row=2,column=3,columnspan = 4, rowspan = 10,sticky = "W")
-    bt3=Button(transformtest, text = "Analyze Current Transforms Using Loaded Image",font=12,command=analyze_transforms,bg="#E0FFFF")
-    bt3.grid(row=3,column=0,columnspan=2,sticky = "W", padx = 2)
+    transformtest.geometry("%dx%d+0+0" % (.9*w, .95*h))
+    tf_menubar = Menu(transformtest)
+    transformtest.config(menu=tf_menubar)
+    tf_menubar.add_command(label="Extinction Settings", command=extinction)
+    Label(transformtest, text = "1. Set Up Test Data",font=16).grid(row=0,column=0,columnspan=2,sticky = W)
+    Button(transformtest,text="Load VPHOT files of Standard Field \nto use for test - 5 or less files",font=16,command=vphotload,bg="#E0FFFF", activebackground = "#E0FFFF").grid(row=0,column=1,columnspan=2,padx=2, sticky = W)
+#    Label(transformtest, text="Load or enter Transform Coefficients: ",font=12).grid(row=1,column=2,sticky = "E",pady=5)
+    Button(transformtest,text="Load Transform Coefficients\nusing .ini file (TA Format)",font=16,command=loadini,bg="#E0FFFF", activebackground = "#E0FFFF").grid(row=0,column=3,padx=2, sticky = W)
+    Label(transformtest, text = "or",font = 16).grid(row = 0, column = 4, sticky = W)
+    Button(transformtest,text="Type in transform\ncoefficients",font=16,command=entertransforms,bg="#E0FFFF", activebackground = "#E0FFFF").grid(row=0,column=4,padx=5, sticky = E)
+    
+    Label(transformtest, text = "2. Perform Test", font = 16).grid(row=1,column = 0,columnspan = 2, sticky = W)
+    perf_anal_btn = Button(transformtest, text = "Transform Analysis\nStatistical",font=16,command=analyze_transforms,bg="#E0FFFF", activebackground = "#E0FFFF",state="disabled")
+    perf_anal_btn.grid(row=1,column=1,padx = 2, sticky = W)
+    plot_xform_anal_btn = Button(transformtest, text = "Transform Analysis\nPlots",font=16,command=plot_xform_anal,bg="#E0FFFF", activebackground = "#E0FFFF", state = "disabled")
+    plot_xform_anal_btn.grid(row=1,column=2,padx = 2, sticky = W)
+
+    
+    Label(transformtest, text = "Select Comp Star: ",font=12).grid(row=2,column = 0, sticky = E)
+    comp_star_setting = StringVar()
+    comp_star_setting.set("Ensemble") # set default
+    Radiobutton(transformtest, text = "Ensemble", value = "Ensemble", font=12, variable = comp_star_setting).grid(row=2,column=1)
+    Radiobutton(transformtest, text = "Star with min err", value = "MinError", font=12, variable = comp_star_setting).grid(row=2,column=2)
+    Radiobutton(transformtest, text = "Star auid", value = "AUID", font=12, variable = comp_star_setting).grid(row=2,column=3,sticky=W)
+    auid_comp_star = StringVar()
+    auid_comp_star.set("Enter AUID ")
+    g = Entry(transformtest,textvariable = auid_comp_star, font=12,width=11)
+    g.grid(row=2,column=3,sticky = E)
+    
+#    l1 = Label(transformtest, text = "_               _" ",font=12).grid(row=1,column=5) # widen column 5 for row 2 radiobuttons
+    Label(transformtest, text = "Plots - number of comps", font = 16).grid(row=2,column=4, sticky = E) # widen column 5 for next radiobuttons
+    num_plot_comps = StringVar()
+    num_plot_comps.set("Max")
+    Radiobutton(transformtest,text= " 1 ",value = "1",font=12,variable = num_plot_comps).grid(row=2,column=5,sticky = E)
+    Radiobutton(transformtest,text= "Max (<=10)",value = "Max",font=12,variable = num_plot_comps).grid(row=2,column=6,sticky = W)
+
+    Label(transformtest, text = "Show Detailed \n  transform/star data  ",font=12).grid(row=3,column = 0, sticky = E)
+    detailed_print_setting = StringVar()
+    detailed_print_setting.set("N")  # set default not to print details of transform test for every star/transform
+    Radiobutton(transformtest, text= "Yes", value = "Y",font=12, variable = detailed_print_setting).grid(row=3,column=1,sticky=W)
+    Radiobutton(transformtest, text= "No", value = "N", font =12, variable = detailed_print_setting).grid(row=3,column=1,sticky=E)
+ 
+    Label(transformtest, text = "3. Transform Optimization\n    (optional - under test)", font=16).grid(row=4,column=0, columnspan = 1, sticky = W)
+    create_opt_btn=Button(transformtest, text = "Create Optimized \nTransform Set",font=16,command=optimize_transforms,bg="#E0FFFF",activebackground = "#E0FFFF", state = "disabled")
+    create_opt_btn.grid(row=4,column=1,padx=2)
+    save_opt_btn = Button(transformtest, text = "Save Optimized\n   Transforms",font=16,command=save_opt_xforms,bg="#E0FFFF", activebackground = "#E0FFFF", state="disabled")
+    save_opt_btn.grid(row=4,column=2,padx = 2)
+    
+                                 
+               
+           
+    status_box = tkst.ScrolledText(transformtest,width=120,height=35,wrap=WORD,font=16)
+    status_box.grid(row=5,column=0,columnspan = 12, rowspan = 12,pady = 2)
+    status_box.insert("end","          STATUS INFORMATION")
+    status_box.insert("end","\n\nTransform equations used are from the AAVSO CCD Manual:\n(1)  Vvar = delta(v) + Tv_bv * delta(B-V) + Vcomp\n(2)  delta(B-V) = Tbv * delta(b-v)\n( Upper case  are published reference magnitudes, lower case are instrumental magnitudes)\n")
+               
     return
 
 
@@ -2937,7 +3813,7 @@ def myfunction(event):
 
 #  Main Program
 
-version = " - Version TG_V6.5"
+version = " - Version TG_V7.2"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
@@ -2956,7 +3832,10 @@ canvas1.pack(side=TOP,fill=BOTH,expand=TRUE)
 menubar = Menu(root)
 root.config(menu=menubar)
 menubar.add_command(label="Extinction Settings", command=extinction)
-menubar.add_command(label="Test Transforms", command=test_transforms)
+detailed_print_setting = StringVar()
+detailed_print_setting.set("N")  # set default not to print details 
+xform_manual_entry_started = 0  # set up for testing transforms allowing typed transforms to be saved for one session
+xforms_and_images_loaded = "N" # set up indicator if anlysis data loaded - N=none,I=images,T=Transforms,TI = images and transforms
 allxforms = ["Tub","Tu_ub","Tb_ub","Tbv","Tb_bv","Tv_bv","Tvr","Tv_vr","Tr_vr","Tri","Tr_ri","Ti_ri","Tvi","Tv_vi","Ti_vi","Tr_vi"] # set up master xform list
 # Set up master close window handler  WINDOWS UNIQUE CODE
 #
@@ -3098,7 +3977,7 @@ config_file.close()
             
 Label(app,text = "Select Telescope ",font=12,bg="#E0FFFF").grid(row=0,column=0,sticky = "W")
 tel_id_picked_var = StringVar()
-tel_id_box = ttk.Combobox(app,width=10,textvariable=tel_id_picked_var,values=tel_id_list)
+tel_id_box = ttk.Combobox(app,width=12,textvariable=tel_id_picked_var,values=tel_id_list,font=12)
 tel_id_box.state(['readonly'])
 tel_id_box.bind("<<ComboboxSelected>>",tel_id_pick)
 tel_id_box.current(0)
@@ -3171,12 +4050,17 @@ save_xform_button.grid(row=8,column=4,padx=20)
 # Create button to merge results of different observations
 merge_obs_sets_button = Button(app,text="Review / Average\n Transform Sets")
 merge_obs_sets_button.configure(command = mergesets,state = "disabled",font=12)
-merge_obs_sets_button.grid(row=8,column=5)
+merge_obs_sets_button.grid(row=8,column=5,padx=20)
 
 # Create button to delete of transform sets
 delete_obs_sets_button = Button(app,text="Delete Old \nTransform Sets")
 delete_obs_sets_button.configure(command = deletesets,state = "disabled",font=12)
-delete_obs_sets_button.grid(row=8,column=6)
+delete_obs_sets_button.grid(row=8,column=6,padx=20)
+
+# Create button to Test Transforms
+test_transform_set_button = Button(app,text="Test Transform Set")
+test_transform_set_button.configure(command = test_transforms,state = "disabled",font=12)
+test_transform_set_button.grid(row=8,column=7,padx=20)
 # size window
 w, h = root.winfo_screenwidth(), root.winfo_screenheight()
 # use the next line if you also want to get rid of the titlebar
