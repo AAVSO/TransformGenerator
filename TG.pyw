@@ -1,16 +1,30 @@
+#
+#   TG VERSION 6.3
+#
 import matplotlib
 matplotlib.use('TkAgg')
-import Tkinter
-from Tkinter import *
-from tkFileDialog import askopenfilenames, asksaveasfile
+try:
+    import Tkinter
+    from Tkinter import *
+    import ttk
+except ImportError:
+    import tkinter
+    from tkinter import *
+    from tkinter import ttk
+try:
+    from tkFileDialog import askopenfilenames, asksaveasfile
+except ImportError:
+    from tkinter.filedialog import askopenfilenames, asksaveasfile
 import sys
 import numpy as np
 from scipy import stats
 import matplotlib.pyplot as plt
-import ttk  #needed for Combobox
 from time import gmtime,strftime,time
 import pickle
-import urllib2
+try:
+    from urllib2 import urlopen
+except ImportError:
+    from urllib.request import urlopen
 from pylab import get_current_fig_manager
 import json
 from decimal import *
@@ -24,7 +38,9 @@ from decimal import *
 #       Bruce Gary's "CCD TRANSFORMATION EQUATIONS FOR USE WITH SINGLE IMAGE                #
 #       (DIFFERENTIAL) PHOTOMETRY".
 #
-#
+#      Version 6.3
+#              Add Melotte 111 field support
+#              Add code to import and work on both Python 3.x and 2.7 
 #      Version 6.0  
 #              Rename of Veresion 5.12 beta for release
 #      Version 5.12 beta
@@ -195,6 +211,10 @@ def calculatetransforms():
                 searchfield = "TW+hor"
             elif std_field_name == "NGC 3532":
                 searchfield = "ER+Car"
+            elif std_field_name == "Melotte 111":
+                searchfield = "IL+Com"
+            elif std_field_name == "SA98SF1":
+                searchfield=  "NSV+3249"
             else:
                 print("Should not get here!")
             
@@ -212,8 +232,8 @@ def calculatetransforms():
 ##              NEW VSP API CODE TO RETIEVE STANDARD REFERENCE MAGNITUDES
 #
             try:
-                f = urllib2.urlopen('https://www.aavso.org/apps/vsp/api/chart/?star='+ searchfield +'&fov=180&maglimit=16.5&special=std_field&format=json')
-            
+                f = urlopen('https://www.aavso.org/apps/vsp/api/chart/?star='+ searchfield +'&fov=210&maglimit=16.5&special=std_field&format=json')
+
             except:
                 Errormsg("Could Not Access AAVSO Web Site")
                 return
@@ -254,7 +274,7 @@ def calculatetransforms():
                 star_id_add_list = m67_AUID_map
             elif std_field_name == "NGC7790":
                 star_id_add_list = ngc7790_AUID_map
-            elif std_field_name == "M11" or std_field_name == "NGC 1252" or std_field_name == "NGC 3532":
+            elif std_field_name == "M11" or std_field_name == "NGC 1252" or std_field_name == "NGC 3532" or std_field_name == "SA98SF1":
                 star_id_add_list = []  # No stars to add
             else:
                 Errormsg("Invalid standard field name")  # indicate no star ids to add b
@@ -1122,7 +1142,7 @@ class MessageBox():
         self.msgwindow = Toplevel()
         self.msgwindow.title("Message")
  #       self.msgwindow.geometry("400x150")
-        Label(self.msgwindow,text=("   "+ message),background = "green",font="12").grid(columnspan=5)
+        Label(self.msgwindow,text=("   "+ message),background = "pale green",font="12").grid(columnspan=5)
         Button(self.msgwindow,text="OK",command = self.quit,font="12").grid(columnspan=5)
        
     def quit(self):
@@ -1133,14 +1153,16 @@ class MessageBox():
 # Create single line two radiobutton widget  #
 ##############################################
 
-class FiveRadioButton():
-    def __init__(self,master,linetag,btn1name,btn2name,btn3name,btn4name,btn5name,line,col,var):
+class SixRadioButton():
+    def __init__(self,master,linetag,btn1name,btn2name,btn3name,btn4name,btn5name,btn6name,line,col,var):
         Label(master,text=linetag,font=12,bg="#E0FFFF").grid(row=line,column=col,columnspan=1,sticky="E")
         Radiobutton(master,text=btn1name,variable=var,value=btn1name,font=12).grid(row=line,column=col+1,sticky = "w", pady=5)
         Radiobutton(master,text=btn2name,variable=var,value=btn2name,font=12).grid(row=line,column=col+2,sticky = "w", pady=5)
         Radiobutton(master,text=btn3name,variable=var,value=btn3name,font=12).grid(row=line,column=col+3,sticky = "w", pady=5)
         Radiobutton(master,text=btn4name,variable=var,value=btn4name,font=12).grid(row=line,column=col+4,sticky = "w", pady=5)
-        Radiobutton(master,text=btn5name,variable=var,value=btn5name,font=12).grid(row=line,column=col+5,sticky = "w", pady=5)
+        Radiobutton(master,text=btn5name,variable=var,value=btn5name,font=12).grid(row=line,column=col+5,sticky = "w", pady=0)
+        Radiobutton(master,text=btn6name,variable=var,value=btn6name,font=12).grid(row=line,column=col+6,sticky = "w", pady=5)
+
 ##############################################
 # Parse line into list                       #
 ##############################################
@@ -1351,7 +1373,6 @@ def mergesets():
 # Create new window
     mergewindow = Toplevel()
     mergewindow.title("Review and Average Different Transform Sets - TG " + version)
-   # mergewindow.state("zoomed") remove for Max x11 problem
     mergewindow.geometry("800x600")
     canvas2 = Canvas(mergewindow)
     root2 = Frame(canvas2)
@@ -1385,13 +1406,12 @@ def mergesets():
     listobs = "" # create string of obs set julian date + transform create date/time
 # Set up scrolled listbox
     myframe = Frame(root2)
-    myframe.pack(side=RIGHT, fill=Y)
-    scrollbar = Scrollbar(myframe)
-    scrollbar.pack(side=RIGHT,fill=Y)
-    obspicklist = Listbox(myframe,height = 15, selectmode="multiple",width=40,bg = "white",yscrollcommand=scrollbar.set)
+    scrollbarlistbox = Scrollbar(myframe)
+    scrollbarlistbox.pack(side=RIGHT,fill=Y)
+    obspicklist = Listbox(myframe,height = 15, selectmode="multiple",width=40,bg = "white",yscrollcommand=scrollbarlistbox.set)
     obspicklist.pack()
-    scrollbar.config(command=obspicklist.yview)
-    myframe.grid(row = 6, columnspan = 2, rowspan=12,)
+    scrollbarlistbox.config(command=obspicklist.yview)
+    myframe.grid(row=6, columnspan = 2, rowspan=12)
     for i in range(count):  # for each record from scope list obs and transform calculation times
         record = tel_id_saved_xforms[i]
         try:
@@ -1467,7 +1487,7 @@ class Obs_Set_Columns(Frame):
     global tel_id_saved_xforms,allxforms,obs_set_checkbox,remove_col,std_field_name
     def __init__(self,master,boxrow,boxcol,obs_id):
         Frame.__init__(self)
-        self.grid()
+#        self.grid()
         self.obs_col_widget(master,boxrow,boxcol,obs_id)
     def obs_col_widget(self,master,boxrow,boxcol,obs_id):  #  Create Display Column with che
         self.use_obs = BooleanVar()
@@ -1654,7 +1674,7 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 6.0"
+version = " - Version 6.3"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
@@ -1829,11 +1849,12 @@ btn2name = "NGC7790"
 btn3name = "M11"
 btn4name = "NGC 1252"
 btn5name = "NGC 3532"
+btn6name = "SA98SF1"
 line = 2
 col = 0
 var = StringVar()
 var.set(btn1name)
-FiveRadioButton(app,linetag,btn1name,btn2name,btn3name,btn4name,btn5name,line,col,var)
+SixRadioButton(app,linetag,btn1name,btn2name,btn3name,btn4name,btn5name,btn6name,line,col,var)
 
 
 # Retrieve Format and File Name of Magnitude Measurements File
@@ -1851,9 +1872,9 @@ fmt_name.set(fmt1name)
 Radiobutton(app,text=fmt1name,variable=fmt_name,value=fmt1name,font=12).grid(row=line_fmt,column=col_fmt,pady=5,padx=2)
 Radiobutton(app,text=fmt2name,variable=fmt_name,value=fmt2name,font=12).grid(row=line_fmt,column=col_fmt+1,pady=5)
 # add third button for VPHOT format
-Radiobutton(app,text=fmt3name,variable=fmt_name,value="VPHOT",font=12).grid(row=line_fmt,column=col_fmt+2,pady=5)
+Radiobutton(app,text=fmt3name,variable=fmt_name,value="VPHOT",font=12).grid(row=line_fmt,column=col_fmt+2,pady=5,columnspan=2)
 vphot_snr = Entry(app,width=4,font=12)
-vphot_snr.grid(row=line_fmt,column=col_fmt+3,pady=10)
+vphot_snr.grid(row=line_fmt,column=col_fmt+4,pady=10)
 vphot_snr.delete(0,END)
 vphot_snr.insert(0,"20")
 Label(app,text="    Current file - ",font=12,bg="#E0FFFF").grid(row=4,column=0,sticky=E,pady=5)
@@ -1862,7 +1883,7 @@ filelabel.grid(row=4,column=1,columnspan=8,sticky="W")
 filelabel.delete(1.0,END)  # clear previous text
 filelabel.insert(0.0,"No file selected")
 getfilnamebutton = Button(app,text="Select File(s)",state = "disabled",font=12)
-getfilnamebutton.grid(row=3,column=col_fmt+4,pady=10)
+getfilnamebutton.grid(row=3,column=col_fmt+5,pady=10)
 getfilnamebutton["command"] = get_file_name
 #  Add horizontal break line
 
