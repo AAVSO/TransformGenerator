@@ -24,6 +24,13 @@ from decimal import *
 #       Bruce Gary's "CCD TRANSFORMATION EQUATIONS FOR USE WITH SINGLE IMAGE                #
 #       (DIFFERENTIAL) PHOTOMETRY".
 #
+#
+#      Version 5.11 beta
+#                  Correct Errormsg on TG input when no stars missing
+#                  M67 original Henden star 45 cross reference removed 
+#                      - star no longer in reference field
+#                  Add NGC 3532 support
+#                  Add NGC 1252 support
 #      Version 5.10
 #                  Chanage original lines to all measurements lines
 #      Version 5.9 beta 
@@ -178,6 +185,10 @@ def calculatetransforms():
                 searchfield = "ce+cas"
             elif std_field_name == "M11":
                 searchfield = "IT+Sct"
+            elif std_field_name == "NGC 1252":
+                searchfield = "TW+hor"
+            elif std_field_name == "NGC 3532":
+                searchfield = "ER+Car"
             else:
                 print("Should not get here!")
             
@@ -195,7 +206,7 @@ def calculatetransforms():
 ##              NEW VSP API CODE TO RETIEVE STANDARD REFERENCE MAGNITUDES
 #
             try:
-                f = urllib2.urlopen('https://www.aavso.org/apps/vsp/api/chart/?star='+ searchfield +'&fov=60&maglimit=16.5&special=std_field&format=json')
+                f = urllib2.urlopen('https://www.aavso.org/apps/vsp/api/chart/?star='+ searchfield +'&fov=180&maglimit=16.5&special=std_field&format=json')
             
             except:
                 Errormsg("Could Not Access AAVSO Web Site")
@@ -236,7 +247,7 @@ def calculatetransforms():
                 star_id_add_list = m67_AUID_map
             elif std_field_name == "NGC7790":
                 star_id_add_list = ngc7790_AUID_map
-            elif std_field_name == "M11":
+            elif std_field_name == "M11" or std_field_name == "NGC 1252" or std_field_name == "NGC 3532":
                 star_id_add_list = []  # No stars to add
             else:
                 Errormsg("Invalid standard field name")  # indicate no star ids to add b
@@ -255,6 +266,7 @@ def calculatetransforms():
     #                Errormsg("Original star id " + str(star_id_add_list[i][0]) + " no longer valid reference star - star measurements will be skipped")
             
             std_field_star_count = std_field_star_count + j
+#
 #            for m in range(std_field_star_count):
 #                print("m,star_id_list[m],star_id_list_label[m],std_field_mags[m,]",m,star_id_list[m],star_id_list_label[m],std_field_mags[m,])
                 
@@ -413,7 +425,7 @@ def calculatetransforms():
                     except:  # Get here for non star id matched lines - 
                         if (aline[0][3:4] == "-" and aline[0][7:8] == "-") or aline[0].isdigit(): # check for valid star id
                             star_id_not_matched_list = star_id_not_matched_list + aline[0]+"\n"  # add id to list of names for error message
-                if star_id_not_matched_list != []:
+                if star_id_not_matched_list != "":
                     Errormsg("Reference Star ids not found in VSP -\n" + star_id_not_matched_list + "\nStars excluded from calculation")
                             
                         
@@ -528,6 +540,7 @@ def calculatetransforms():
                     starline_found = "N"
                     activestars = 0 # set to count active stars to ensure some found 
                     for oneline in measurements: # process each line in the file
+#                        print("oneline in measurements - ",oneline)
                         if oneline == "\n" or oneline == "\r\n":
                             continue # read next line
                         aline = [] # create holding list for parsed oneline
@@ -574,7 +587,7 @@ def calculatetransforms():
                                         star_id_not_matched_list = star_id_not_matched_list + one_msg_line + "\n"  # add line to error message
                                         one_msg_line = ""
                                 continue # no match - go to next measurement file input line
-                          #  print("found label in standards file - label, ref_star_id_line_label_match_index = ",label,ref_star_id_line_label_match_index)
+#                            print("found label in standards file - label, ref_star_id_line_label_match_index = ",label,ref_star_id_line_label_match_index)
                             
     # Search VSP data with same label to find matching star magnitude and B-V # sf_col_list = ["RA","Dec","U","B","V","R","I"] # list names of each column in std_field_mags array  ;
                             for j in range(ref_star_id_line_label_match_index,ref_star_id_line_label_match_index + 20):
@@ -673,7 +686,7 @@ def calculatetransforms():
             md = np.zeros((num_meas_stars,len(md_col_list))) # magnitude differences array
             for i in range(num_meas_stars):
                 md[i,md_col_list.index("Star_id_index")] = measured_machine_mags[i,mmm_col_lst.index("Star_id_index")] # Star id index number
-                j = md[i,md_col_list.index("Star_id_index")]  # Star id index number
+                j = int(md[i,md_col_list.index("Star_id_index")])  # Star id index number
                 md[i,md_col_list.index("RA")] = std_field_mags[j,sf_col_list.index("RA")]
                 md[i,md_col_list.index("Dec")] = std_field_mags[j,sf_col_list.index("Dec")]
                 md[i,md_col_list.index("U-B")] = std_field_mags[j,sf_col_list.index("U")] - std_field_mags[j,sf_col_list.index("B")]
@@ -1115,13 +1128,14 @@ class MessageBox():
 # Create single line two radiobutton widget  #
 ##############################################
 
-class ThreeRadioButton():
-    def __init__(self,master,linetag,btn1name,btn2name,btn3name,line,col,var):
+class FiveRadioButton():
+    def __init__(self,master,linetag,btn1name,btn2name,btn3name,btn4name,btn5name,line,col,var):
         Label(master,text=linetag,font=12,bg="#E0FFFF").grid(row=line,column=col,columnspan=1,sticky="E")
-        Radiobutton(master,text=btn1name,variable=var,value=btn1name,font=12).grid(row=line,column=col+1,pady=10)
-        Radiobutton(master,text=btn2name,variable=var,value=btn2name,font=12).grid(row=line,column=col+2,pady=10)
-        Radiobutton(master,text=btn3name,variable=var,value=btn3name,font=12).grid(row=line,column=col+3,pady=10)
-        
+        Radiobutton(master,text=btn1name,variable=var,value=btn1name,font=12).grid(row=line,column=col+1,sticky = "w", pady=5)
+        Radiobutton(master,text=btn2name,variable=var,value=btn2name,font=12).grid(row=line,column=col+2,sticky = "w", pady=5)
+        Radiobutton(master,text=btn3name,variable=var,value=btn3name,font=12).grid(row=line,column=col+3,sticky = "w", pady=5)
+        Radiobutton(master,text=btn4name,variable=var,value=btn4name,font=12).grid(row=line,column=col+4,sticky = "w", pady=5)
+        Radiobutton(master,text=btn5name,variable=var,value=btn5name,font=12).grid(row=line,column=col+5,sticky = "w", pady=5)
 ##############################################
 # Parse line into list                       #
 ##############################################
@@ -1635,10 +1649,10 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 5.10"
+version = " - Version 5.11 beta"
 root = Tk()
 root.title("Transformation Generator " + version)
-root.geometry("800x600")
+root.geometry("1200x600")
 # root.state("zoomed") does not work on Mac
 canvas1 = Canvas(root)
 app = Frame(canvas1)
@@ -1746,7 +1760,7 @@ m67_orig_id_AUID_map = [1,"000-000-000",132.799179,11.756206,
                         41,"000-BLG-919",132.756562,11.826251,
                         43,"000-BLG-920",132.814463,11.792138,
                         44,"000-BLG-921",132.870125,11.866722,
-                        45,"000-BLG-922",132.900157,11.776074,
+                        45,"000-000-000",132.900157,11.776074,
                         46,"000-000-000",132.845584,11.813799,
                         47,"000-BLG-923",132.877514,11.820411,
                         48,"000-BLG-924",132.924889,11.727077,
@@ -1808,11 +1822,13 @@ linetag = "Select Standards Field - "
 btn1name = "M67"
 btn2name = "NGC7790"
 btn3name = "M11"
+btn4name = "NGC 1252"
+btn5name = "NGC 3532"
 line = 2
 col = 0
 var = StringVar()
 var.set(btn1name)
-ThreeRadioButton(app,linetag,btn1name,btn2name,btn3name,line,col,var)
+FiveRadioButton(app,linetag,btn1name,btn2name,btn3name,btn4name,btn5name,line,col,var)
 
 
 # Retrieve Format and File Name of Magnitude Measurements File
@@ -1827,10 +1843,10 @@ col_fmt = 2
 fmt_name = StringVar()
 fmt_name.set(fmt1name)
 # TwoRadioButton(app,format_tag,fmt1name,fmt2name,line_fmt,col_fmt,fmt_name)
-Radiobutton(app,text=fmt1name,variable=fmt_name,value=fmt1name,font=12).grid(row=line_fmt,column=col_fmt,pady=10,padx=2)
-Radiobutton(app,text=fmt2name,variable=fmt_name,value=fmt2name,font=12).grid(row=line_fmt,column=col_fmt+1,pady=10)
+Radiobutton(app,text=fmt1name,variable=fmt_name,value=fmt1name,font=12).grid(row=line_fmt,column=col_fmt,pady=5,padx=2)
+Radiobutton(app,text=fmt2name,variable=fmt_name,value=fmt2name,font=12).grid(row=line_fmt,column=col_fmt+1,pady=5)
 # add third button for VPHOT format
-Radiobutton(app,text=fmt3name,variable=fmt_name,value="VPHOT",font=12).grid(row=line_fmt,column=col_fmt+2,pady=10)
+Radiobutton(app,text=fmt3name,variable=fmt_name,value="VPHOT",font=12).grid(row=line_fmt,column=col_fmt+2,pady=5)
 vphot_snr = Entry(app,width=4,font=12)
 vphot_snr.grid(row=line_fmt,column=col_fmt+3,pady=10)
 vphot_snr.delete(0,END)
@@ -1850,22 +1866,22 @@ Label(app,text=("---------" * 20)).grid(row=7,column=0,columnspan=8)
 # Create Button to calculate transforms
 caltransformsbutton = Button(app,text="Calculate Transform Set")
 caltransformsbutton.configure(command = calculatetransforms,state = "disabled",font=12)
-caltransformsbutton.grid(row=8,column=0,columnspan=3,padx=20,pady=10)
+caltransformsbutton.grid(row=8,column=0,columnspan=2,padx=20,pady=10)
 
 # Create Button to save transforms - disabled
 save_xform_button = Button(app,text="Save Transform Set")
 save_xform_button.configure(state = "disabled", command = savetransforms,font=12)
-save_xform_button.grid(row=8,column=3,padx=20)
+save_xform_button.grid(row=8,column=2,padx=20)
 
 # Create button to merge results of different observations
 merge_obs_sets_button = Button(app,text="Review / Average\n Transform Sets")
 merge_obs_sets_button.configure(command = mergesets,state = "disabled",font=12)
-merge_obs_sets_button.grid(row=8,column=4)
+merge_obs_sets_button.grid(row=8,column=3)
 
 # Create button to delete of transform sets
 delete_obs_sets_button = Button(app,text="Delete Old \nTransform Sets")
 delete_obs_sets_button.configure(command = deletesets,state = "disabled",font=12)
-delete_obs_sets_button.grid(row=8,column=6)
+delete_obs_sets_button.grid(row=8,column=4)
 root.mainloop()
 
 
