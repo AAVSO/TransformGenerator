@@ -2540,7 +2540,7 @@ def optimize_transforms():
 #  Progress bar
 #
     pbar = ttk.Progressbar(transformtest,orient='horizontal',length=300,mode='determinate')
-    pbar.grid(row=20, column = 0,padx=2,pady=2,sticky="NESW")
+#    pbar.grid(row=20, column = 0,padx=2,pady=2,sticky="NESW")
     for i in range(num_steps) : # for each set
         for j in range(len(final_transforms_to_do)) :
             test_various_xform_values[i,j] = test_xforms_float[allxforms.index(final_transforms_to_do[j])] + 2*sigma_factor/num_steps*(i-int(num_steps/2))*test_xforms_err_float[allxforms.index(final_transforms_to_do[j])]  # Range of values to test -save copy for set i=transform set,j=transform index in
@@ -2748,13 +2748,18 @@ def analyze_transforms():
         lowest_error = 100  # set up to count lowest error mag across all filters of images loaded
         for i in range(max_num_test_stars):
             num_filt_w_data = 0
+            max_num_filt_w_data = 0
             avg_error = 0
+            
             for j in range(flen): #range(5) : # all filters
                 if teit[i,2*j+2] == 0 : # go to next star if star doesn't have alues for all filters
-                    break
+                   break
                 num_filt_w_data += 1
                 avg_error = ((num_filt_w_data - 1)*avg_error + teit[i,2*j + 2])/num_filt_w_data
-            if avg_error < lowest_error and avg_error != 0 :  # ignore star with bad data
+            if num_filt_w_data > max_num_filt_w_data:
+                max_num_filt_w_data = num_filt_w_data
+                
+            if avg_error < lowest_error and avg_error != 0 and num_filt_w_data == max_num_filt_w_data:  # ignore star with bad data
                 lowest_error = avg_error
                 comp_star_id = teit_test_star_auid[i]
                 for j in range(5):
@@ -2762,6 +2767,7 @@ def analyze_transforms():
                     comp_star_ref_mags[j,1] = teit[i,2*j +2] # comp ref error
                     comp_star_inst_mags[j,0] = teit[i,2*flen + 3*j + 1] # comp instrument mag
                     comp_star_inst_mags[j,1] = teit[i,2*flen + 3*j + 2] # comp instrument mag error
+            print("comp_star_ref_mags ",comp_star_ref_mags)
                     
     elif comp_star_setting.get() == "Ensemble" : # Ensemble selected
         test_star_count = np.zeros(flen)
@@ -2776,9 +2782,10 @@ def analyze_transforms():
                     comp_star_ref_mags[j,1] += teit[i,2*j + 2]**2 # add square of error for ref mag
                     comp_star_inst_mags[j,1] += teit[i,2*flen + 3*j + 2]**2 # add square of error for instrument mags
                     test_star_count[j] += 1  # add 1 to star count for this filter
-        for j in range(flen):  
-            comp_star_ref_mags[j,0] = comp_star_ref_mags[j,0] / test_star_count[j]
-            comp_star_ref_mags[j,1] = math.sqrt(comp_star_ref_mags[j,1] / test_star_count[j])
+        for j in range(flen):
+            if comp_star_ref_mags[j,0] != 0:    # only calculate ensemble mags if available             
+                comp_star_ref_mags[j,0] = comp_star_ref_mags[j,0] / test_star_count[j]
+                comp_star_ref_mags[j,1] = math.sqrt(comp_star_ref_mags[j,1] / test_star_count[j])
             if comp_star_inst_mags[j,0] != 0 : # be sure measurements were taken
                 comp_star_inst_mags[j,1] = math.sqrt(comp_star_inst_mags[j,1] / test_star_count[j])
                 comp_star_inst_mags[j,0] = comp_star_inst_mags[j,0] / test_star_count[j] # error
@@ -2786,6 +2793,7 @@ def analyze_transforms():
     else:  # must be auid input
         comp_star_id = auid_comp_star.get().strip() # remove any spaces in comp star auid
         for i in range(len(teit_test_star_auid)) :
+            print("comp_star_id, teit_test_star_auid[i], i",comp_star_id, teit_test_star_auid[i], i)
             if comp_star_id == teit_test_star_auid[i]:
                 break
             if i != len(teit_test_star_auid) - 1:
@@ -3535,7 +3543,10 @@ def xform_to_plot_pick(event):  # function executed when user selects transform 
     y_axis_label = xform_to_plot[1:2] # e.g. b
     color_xform = test_xforms_float[allxforms.index(xform_color)]
     mag_xform = test_xforms_float[allxforms.index(xform_to_plot)]
-    color_times_mag_xform = -color_xform * mag_xform # minus for projected error 
+    color_times_mag_xform = -color_xform * mag_xform # minus for projected error
+    if detailed_print_setting.get() == "Y":
+        print("comp_star_id_list = ",comp_star_id_list)
+    
     for i in range(len(comp_star_id_list)):
         tgt_name = []
         for j in range(max_num_test_stars):
@@ -3654,7 +3665,7 @@ def plot_xform_anal(): # main window creation program for plotting transform ana
 #    Radiobutton(transformtest,text= " 1 ",value = "1",font=12,variable = num_plot_comps).grid(row=2,column=5,sticky = E)
 #    Radiobutton(transformtest,text= "Max (<=10)",value = "Max",font=12,variable = num_plot_comps).grid(row=2,column=6,sticky = W)
     max_num_comp_stars_for_plotting = 3
-    if num_plot_comps.get() == "Max" :
+    if num_plot_comps.get() == "Max" and comp_star_setting.get() == "AUID":
         flen = 5 # number of filters
         comp_star_id_list = []
         plot_data_full = np.zeros((10,max_num_test_stars,11,5)) # sized to maximum number of transforms possible (11)
@@ -3668,7 +3679,6 @@ def plot_xform_anal(): # main window creation program for plotting transform ana
             if count == max_num_comp_stars_for_plotting:  # take first 10 stars with data on all filters - may change later to be more selective in fields with large number of stars
                 break
         num_comp_stars = count # save number of comp stars
-        comp_star_setting.set("AUID") # set so analyze transforms will use AUID
         for n in range(num_comp_stars):
             auid_comp_star.set(comp_star_id_list[n])
             analyze_transforms()
@@ -3916,7 +3926,7 @@ def myfunction(event):
 
 #  Main Program
 
-version = " - Version TG_V7.3"
+version = " - Version TG_V7.4"
 root = Tk()
 root.title("Transformation Generator " + version)
 #root.geometry("1200x600")
