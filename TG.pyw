@@ -234,7 +234,8 @@ def calculatetransforms():
                 bandmapping = ["","","U","B","V","Rc","Ic"]  # .index will provide index for std_field_mags
                 std_field_mags[i,bandmapping.index("U")] = -1000 # set to no data in case no U value provided
                 for j in range(len(band_meas)):
-                    std_field_mags[i,bandmapping.index(band_meas[j].get("band"))] = band_meas[j].get("mag")
+                    if band_meas[j].get("band") in bandmapping:  # look out for new bands being added
+                        std_field_mags[i,bandmapping.index(band_meas[j].get("band"))] = band_meas[j].get("mag")
                 
                 
             std_field_star_count = i + 1
@@ -1649,7 +1650,7 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 5.11 beta"
+version = " - Version 5.11a beta"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
