@@ -24,6 +24,12 @@ from decimal import *
 #       Bruce Gary's "CCD TRANSFORMATION EQUATIONS FOR USE WITH SINGLE IMAGE                #
 #       (DIFFERENTIAL) PHOTOMETRY".
 #
+#      Version 5.10
+#                  Chanage original lines to all measurements lines
+#      Version 5.9 beta 
+#                  Add M11 Standard field
+#                  Change plot of sigma lines to show y_sigma not slope error
+#
 #      Version 5.8
 #                  Change VSP link to new VSP API (retrieves standard reference mags)
 #      Version 5.7
@@ -170,6 +176,8 @@ def calculatetransforms():
                 searchfield = "ht+cnc"
             elif std_field_name == "NGC7790":
                 searchfield = "ce+cas"
+            elif std_field_name == "M11":
+                searchfield = "IT+Sct"
             else:
                 print("Should not get here!")
             
@@ -228,6 +236,8 @@ def calculatetransforms():
                 star_id_add_list = m67_AUID_map
             elif std_field_name == "NGC7790":
                 star_id_add_list = ngc7790_AUID_map
+            elif std_field_name == "M11":
+                star_id_add_list = []  # No stars to add
             else:
                 Errormsg("Invalid standard field name")  # indicate no star ids to add b
             
@@ -516,6 +526,7 @@ def calculatetransforms():
                 for file_i in range(len(file_namelist)): # process each file listed
                     measurements = open(file_namelist[file_i],mode="r")  # retrieve instrument measurements file
                     starline_found = "N"
+                    activestars = 0 # set to count active stars to ensure some found 
                     for oneline in measurements: # process each line in the file
                         if oneline == "\n" or oneline == "\r\n":
                             continue # read next line
@@ -604,6 +615,7 @@ def calculatetransforms():
                                                                                        
                                      if aline[vphot_col_list.index("Active")] == "True" and float(aline[vphot_col_list.index("SNR")]) > snr_limit: # check for invalid measurement
                                          
+                                         activestars += 1 # count VPhot active stars matched
                                          measured_machine_mags[k,mmm_col_lst.index(currentfilter.lower())] = (mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)]* \
                                                                                                       measured_machine_mags[k,mmm_col_lst.index(currentfilter)] + \
                                                                                                       float(aline[vphot_col_list.index("IM")]))/   \
@@ -619,6 +631,9 @@ def calculatetransforms():
                 
                 if star_id_not_matched_list != "":
                     Errormsg("Reference Star ids not found in VSP -\n" + star_id_not_matched_list + one_msg_line + "\nStars Excluded from Calculation")
+                if activestars < 2:
+                    Errormsg("Less than two active stars in VPhot File")
+                    return
                 num_meas_stars = srow # total number of stars with measurements
 #
 # Search all magnnitudes and set any 0 to -1000 indicating no measurement or bad measurement
@@ -781,7 +796,7 @@ def calculatetransforms():
 #
 def transform_calc(transform_names,num_meas_stars,transform_inst,md):
     """ Create transform_raw_data array containing specific data required for each transform, for example all U-b and U-B measurements for the Tub transform """
-    global x,y,transform_data,md_col_list,meas_JD,transform_val,transform_raw_data,fig1,transform_val_err,transform_val_r2
+    global x,y,transform_data,md_col_list,meas_JD,transform_val,transform_raw_data,fig1,transform_val_err,transform_val_r2,transform_std_error
     transform_raw_data = np.zeros((len(transform_names),num_meas_stars,5))
     for tname in transform_names:
         for m1 in range(num_meas_stars):
@@ -811,11 +826,13 @@ def transform_calc(transform_names,num_meas_stars,transform_inst,md):
         x = xinter[0:m5]
         y = yinter[0:m5]
         slope,intercept,r_value,p_value,slope_std_error = stats.linregress(x,y) # Calculate least squares fit
-        trform = slope   
+        trform = slope
+        transform_std_error = slope_std_error
         if transform_inst[transform_inst.index(tname) +3] == "Y":  # Create reciprocal if needed
             trform = 1/slope
+            transform_std_error = slope_std_error/(slope*(slope-slope_std_error))
         transform_val.append(trform)
-        transform_val_err.append(slope_std_error)
+        transform_val_err.append(transform_std_error)
         transform_val_r2.append(r_value**2)
         
         
@@ -839,7 +856,7 @@ def on_enter(event):
 def on_leave(event):
     event.widget.configure(background = "white", foreground = "black")
 def line_pick(event):
-    global pick_line,tname,selected_star_textlab,ax,fig1,xends_3sigma_orig,yends_3sigma_orig
+    global pick_line,tname,selected_star_textlab,ax,fig1,xends_sigma_orig,yends_sigma_orig
     pick_line = event.widget.get(0.0,END)
     temp = pick_line[0:6] # select transform letters from text line selected
     tname = temp.strip()
@@ -849,8 +866,8 @@ def line_pick(event):
     except:
         dummy = 0
     selected_star_textlab = "  "  # No message to display on first call
-    xends_3sigma_orig = np.zeros(2)  # set up to track original 3 sigma lines on plot
-    yends_3sigma_orig = np.zeros(2)
+    xends_sigma_orig = np.zeros(2)  # set up to track original 3 sigma lines on plot
+    yends_sigma_orig = np.zeros(2)
     fig1 = plt.figure(1)  # start figure 1
 ##
 ##  Add test code to raise window to front
@@ -878,7 +895,7 @@ def line_pick(event):
 def onpick(event):
     global transform_data,transform_raw_data,num_meas_stars,num_good_meas,num_used_meas,use,x,y,first_plot,changed_point
     global transform_inst,tname,transform_label,fig1,selected_star_textlab,change_star_id_msg,old_pick_time,ax,predict_y,x
-    global txtboxlab,slope_std_error,r_value,transform_val_err,transform_val_r2,star_id_list,xends,yends
+    global txtboxlab,slope_std_error,r_value,transform_val_err,transform_val_r2,star_id_list,xends,yends,transform_std_error
     thisline = event.artist # event id
     xdata = thisline.get_xdata()
     ydata = thisline.get_ydata()
@@ -906,9 +923,9 @@ def onpick(event):
 
 # Update root page
     transform_val[transform_names.index(tname)] = trform
-    transform_val_err[transform_names.index(tname)] = slope_std_error
+    transform_val_err[transform_names.index(tname)] = transform_std_error  # calculated in calculate_plot_transform()
     transform_val_r2[transform_names.index(tname)] = r_value**2
-    line_text = tname.ljust(7) +" =  %6.3f" % trform + " err = %4.3f" % slope_std_error + " r^2 = %3.2f" % r_value**2
+    line_text = tname.ljust(7) +" =  %6.3f" % trform + " err = %4.3f" % transform_std_error + " r^2 = %3.2f" % r_value**2
     row = 14 + transform_names.index(tname)
     txtboxlab[row-14].delete(1.0, END)  # clear previous text
     txtboxlab[row-14].insert(0.0,line_text)
@@ -930,30 +947,59 @@ def onpick(event):
 def calculate_plot_transform():
     global transform_data,transform_raw_data,num_meas_stars,num_good_meas,num_used_meas,use,x,y,first_plot,changed_point,ax,predict_y,x,xends,yends
     global transform_inst,x_in_use,y_in_use,tname,transform_label,predict_plot,num_good_meas,fig1,selected_star_textlab,change_star_id_msg,ax,slope_std_error,r_value
-    global xends_3sigma_orig,yends_3sigma_orig,orig_sigma
+    global xends_3sigma_orig,yends_3sigma_orig,orig_sigma,transform_std_error,xends_sigma_orig,yends_sigma_orig,orig_sigma
     xends = np.zeros(2) # id min and max x
-    m5 = 0
+    m5 = 0 # counter for selected measurements
+    m6 = 0 # counter for valid measurements
     
-    xinter = np.zeros(num_meas_stars)
-    yinter = np.zeros(num_meas_stars)
-  #  print("num_meas_stars=",num_meas_stars)
+    xinter = np.zeros(num_meas_stars)  # will hold all measurements selected for use
+    yinter = np.zeros(num_meas_stars)  # will hold all measurements selected for us
+    xallvalid = np.zeros(num_meas_stars)  # will hold all valid measurements in original downloaded file
+    yallvalid = np.zeros(num_meas_stars)  # will hold all valid measurements in original downlaoded file
+    
+#  print("num_meas_stars=",num_meas_stars)
     for m4 in range(num_meas_stars):  # find valid star to initialize ends
    #     print("m4,transform_raw_data[transform_names.index(tname),m4,3],transform_raw_data[transform_names.index(tname),m4,1]\n",m4,transform_raw_data[transform_names.index(tname),m4,3],transform_raw_data[transform_names.index(tname),m4,1])
         if transform_raw_data[transform_names.index(tname),m4,3] < 2:  # valid star measurement
             xends[0] = transform_raw_data[transform_names.index(tname),m4,1]  # set min to first valid measurement
             xends[1] = transform_raw_data[transform_names.index(tname),m4,1]  # set max to first valid measurement
             break
-    for m4 in range(num_meas_stars):  # save stars being used in calculation
+    for m4 in range(num_meas_stars):  # save stars being used in calculation and all valid stars (separate files)
         if transform_raw_data[transform_names.index(tname),m4,3]== 1:
             xinter[m5] = transform_raw_data[transform_names.index(tname),m4,1]
             yinter[m5] = transform_raw_data[transform_names.index(tname),m4,2]
             m5 = m5+1
-        if transform_raw_data[transform_names.index(tname),m4,3] != 2: # find ends of valid stars for plotting
-            if transform_raw_data[transform_names.index(tname),m4,1] < xends[0]:  # find min
+        if transform_raw_data[transform_names.index(tname),m4,3] != 2: # find all valid stars for plotting
+            xallvalid[m6] = transform_raw_data[transform_names.index(tname),m4,1]
+            yallvalid[m6] = transform_raw_data[transform_names.index(tname),m4,2]
+            m6 = m6 + 1
+            if transform_raw_data[transform_names.index(tname),m4,1] < xends[0]:  # find min for plot range
                 xends[0] = transform_raw_data[transform_names.index(tname),m4,1]
-            if transform_raw_data[transform_names.index(tname),m4,1] > xends[1]:  # find max
+            if transform_raw_data[transform_names.index(tname),m4,1] > xends[1]:  # find max for plot range
                 xends[1] = transform_raw_data[transform_names.index(tname),m4,1]
-            
+#
+#  Get fit using all valid stars to create guidelines on plot for 2 sigma original fit
+#
+    x = xallvalid[0:m6]
+    y = yallvalid[0:m6]
+    slope,intercept,r_value,p_value,slope_std_error = stats.linregress(x,y) # Calculate least squares fit using all measurementss
+    #
+#  Calculate Y standard error using all measurements
+#
+    num_points = len(x)
+    y_err_squared_sum = 0
+    for i in range(num_points):
+        y_err_squared_sum += (y[i] - intercept - slope*x[i])**2
+    y_std_error = np.sqrt(y_err_squared_sum/(num_points - 2))
+    yends = slope * xends + intercept # compute predicted y values at ends of plot
+    xends_sigma_orig = xends
+    yends_sigma_orig = yends
+    orig_sigma = y_std_error
+
+#
+#  Calculaate Fit parameters using only selected points
+
+
     x = xinter[0:m5]
     y = yinter[0:m5]
             
@@ -962,11 +1008,23 @@ def calculate_plot_transform():
     #
     slope,intercept,r_value,p_value,slope_std_error = stats.linregress(x,y) # Calculate least squares fit
     trform = slope
+    transform_std_error = slope_std_error
    # debug line print("slope_std_error ",slope_std_error)
-    
-    
+#
+#  Calculate Y standard error using all selected points
+#
+    num_points = len(x)
+    y_err_squared_sum = 0
+    for i in range(num_points):
+        y_err_squared_sum += (y[i] - intercept - slope*x[i])**2
+    y_std_error = np.sqrt(y_err_squared_sum/(num_points - 2))
+    yends = slope * xends + intercept # compute predicted y values at ends of plot
+#####
+        
     if transform_inst[transform_inst.index(tname) +3] == "Y":  # Create reciprocal if needed
         trform = 1/slope
+        transform_std_error = slope_std_error/(slope*(slope-slope_std_error))
+
     
     for i in range(num_meas_stars):  # plot one point at a time so color can be switched later
         if transform_raw_data[transform_names.index(tname),i,3] == 1:
@@ -978,25 +1036,19 @@ def calculate_plot_transform():
     
 
     yends = slope * xends + intercept # compute predicted y values at ends of plot
- # if first time plot, save 3 sigma plot data.  If not first time, plot original 3 sigma data
- #   print("selected_star_textlab=",selected_star_textlab)    
-    if selected_star_textlab == "  ":
-        xends_3sigma_orig = xends
-        yends_3sigma_orig = yends
-        orig_sigma = slope_std_error
  #   print("xends_3sigma_orig,yends_3sigma_orig,orig_sigma",xends_3sigma_orig,yends_3sigma_orig,orig_sigma)
 # Always show original 3 sigma lines
 #    print("xends_3sigma_orig,yends_3sigma_orig,orig_sigma",xends_3sigma_orig,yends_3sigma_orig,orig_sigma)
-    ax.plot(xends_3sigma_orig,yends_3sigma_orig + 3.0*orig_sigma,"m-",linewidth=2)
-    ax.plot(xends_3sigma_orig,yends_3sigma_orig - 3.0*orig_sigma,"m-",linewidth=2)
+    ax.plot(xends_sigma_orig,yends_sigma_orig + 2*orig_sigma,"m-",linewidth=2)
+    ax.plot(xends_sigma_orig,yends_sigma_orig - 2*orig_sigma,"m-",linewidth=2)
 # plot current fit and 3 sigma lines     
     predict_plot = ax.plot(xends,yends, 'r-')
-    ax.plot(xends,yends + 3.0*slope_std_error,'b:',linewidth=2)
-    ax.plot(xends,yends - 3.0*slope_std_error,'b:',linewidth=2)
+    ax.plot(xends,yends + 2*y_std_error,'b:',linewidth=2)
+    ax.plot(xends,yends - 2*y_std_error,'b:',linewidth=2)
     ax.set_xlabel(transform_inst[transform_inst.index(tname)+1])
     ax.set_ylabel(transform_inst[transform_inst.index(tname)+2])
     ax.set_title(tname)
-    textlab = tname + " =  %5.3f" % trform + " err = %4.3f" % slope_std_error + "  R^2 = %3.2f" % r_value**2 + "  # ref stars = %3.0f" % m5
+    textlab = tname + " =  %5.3f" % trform + " err = %4.3f" % transform_std_error + "  R^2 = %3.2f" % r_value**2 + "  # ref stars = %3.0f" % m5
     xmin, xmax = plt.xlim()
     ymin, ymax = plt.ylim()
     delx = xmax-xmin
@@ -1006,8 +1058,8 @@ def calculate_plot_transform():
     ymsg = .05*dely + ymin
     yline = ymsg - .01*dely
     ax.text(.1*delx+xmin,ymsg,"Current Fit ")
-    ax.text(.4*delx+xmin,ymsg,"Current 3 sigma")
-    ax.text(.7*delx+xmin,ymsg,"Original 3 sigma")
+    ax.text(.4*delx+xmin,ymsg,"Current 2 sigma")
+    ax.text(.7*delx+xmin,ymsg,"All Measurements 2 sigma")
     ax.plot((.1*delx+xmin,.3*delx+xmin),(yline,yline),'r-')
     ax.plot((.4*delx+xmin,.6*delx+xmin),(yline,yline),'b:',linewidth=2)
     ax.plot((.7*delx+xmin,.9*delx+xmin),(yline,yline),'m-',linewidth=2)
@@ -1063,12 +1115,13 @@ class MessageBox():
 # Create single line two radiobutton widget  #
 ##############################################
 
-class TwoRadioButton():
-    def __init__(self,master,linetag,btn1name,btn2name,line,col,var):
+class ThreeRadioButton():
+    def __init__(self,master,linetag,btn1name,btn2name,btn3name,line,col,var):
         Label(master,text=linetag,font=12,bg="#E0FFFF").grid(row=line,column=col,columnspan=1,sticky="E")
         Radiobutton(master,text=btn1name,variable=var,value=btn1name,font=12).grid(row=line,column=col+1,pady=10)
         Radiobutton(master,text=btn2name,variable=var,value=btn2name,font=12).grid(row=line,column=col+2,pady=10)
-
+        Radiobutton(master,text=btn3name,variable=var,value=btn3name,font=12).grid(row=line,column=col+3,pady=10)
+        
 ##############################################
 # Parse line into list                       #
 ##############################################
@@ -1582,7 +1635,7 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 5.8"
+version = " - Version 5.10"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("800x600")
@@ -1754,11 +1807,12 @@ tel_id_box.grid(row=0,column=1)
 linetag = "Select Standards Field - "
 btn1name = "M67"
 btn2name = "NGC7790"
+btn3name = "M11"
 line = 2
 col = 0
 var = StringVar()
 var.set(btn1name)
-TwoRadioButton(app,linetag,btn1name,btn2name,line,col,var)
+ThreeRadioButton(app,linetag,btn1name,btn2name,btn3name,line,col,var)
 
 
 # Retrieve Format and File Name of Magnitude Measurements File
