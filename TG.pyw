@@ -1,22 +1,20 @@
 #
-#   TG VERSION 6.5beta
+#   TG VERSION 6.6
 #
 import matplotlib
 matplotlib.use('TkAgg')
 try:
     import Tkinter
-    import ScrolledText as tkst
     from Tkinter import *
     import ttk
 except ImportError:
     import tkinter
-    import tkinter.scrolledtext as tkst
     from tkinter import *
     from tkinter import ttk
 try:
-    from tkFileDialog import askopenfilenames, asksaveasfile, askopenfilename
+    from tkFileDialog import askopenfilenames, asksaveasfile
 except ImportError:
-    from tkinter.filedialog import askopenfilenames, asksaveasfile, askopenfilename
+    from tkinter.filedialog import askopenfilenames, asksaveasfile
 import sys
 import numpy as np
 from scipy import stats
@@ -31,20 +29,6 @@ except ImportError:
 from pylab import get_current_fig_manager
 import json
 from decimal import *
-import astropy.units as u
-from astropy.time import Time
-from astropy.coordinates import SkyCoord, EarthLocation, AltAz
-import math
-#try:
-#    # for Python2
-#    import Tkinter as tk
-#    import ScrolledText as tkst
-#except ImportError:
-#    # for Python3
-#    import tkinter as tk
-#    import tkinter.scrolledtext as tkst
-
-
 #############################################################################################
 #############################################################################################
 #                                                                                           #
@@ -56,12 +40,11 @@ import math
 #       (DIFFERENTIAL) PHOTOMETRY".
 #
 #
-#      Version 6.5
-#              Add extinction support
-#
-#
-#
-#      Version 6.4
+#      Version 6.6 (no version 6.5 created)
+#              Add support for additional transform coefficients for Lesve (Tbr,Tbi,Tb_br,Tb_bi)
+#              Add new VPhot format option (new Max column) 
+#      
+#      Versionn 6.4
 #              Add support for Landolt field
 #              Fix delete transform sets (Mac issue)
 #      Version 6.3
@@ -215,10 +198,8 @@ import math
 #                                                                                           #
 #############################################################################################
 def calculatetransforms():
-            global md_col_list,meas_JD,transform_names,transform_inst,num_meas_stars,transform_raw_data,fig1,tel_id
+            global md_col_list,meas_JD,transform_names,transform_inst,num_meas_stars,transform_raw_data,fig1,tel_id,meas_JD
             global txtboxlab,titlab,std_field_name,transform_val_err,star_id_list,file_namelist,vphot_snr,radecwindow,enteredfield
-            global radecimal,decdecimal,errflag,extinction_setting,kprime_u,kprime_b,kprime_v,kprime_r,kprime_i,ext_used
-            global star_id_list,star_id_list_label,std_fields_mag,std_field_star_count,searchfield
 
            
 #
@@ -226,35 +207,6 @@ def calculatetransforms():
 #
             telescopename = tel_id # Telescope Name
             std_field_name = var.get()
-#
-#   Test for extinction setup
-#
-            config_file = open("Photometry_Transform_Config_Data.txt","r") # open telescope info file
-            for line in config_file:
-                aline = []  # hold parsed line
-                lineparse(line,aline,[";",";"]) # on ; is delimiter
-#                print("\naline, telescopename, len(aline) ",aline,telescopename, len(aline))
-#                print("aline[1], telescopename,len(aline)",aline[1], telescopename,len(aline))
-                if (aline[1] == telescopename) and (len(aline) == 13): # found extinction record
-                    ext_aline = aline # save all telescope data including extinction, observatory location
-#                    print("ext_aline, ",ext_aline)
-# Format of telescope line "ext_aline" -  #  'Telescope id';ex_tel_id;k'u;k'b;k'v;k'r;k'i;k"bbv;obs_lat;obs_long;obs_elev;obslatdecimal;obslongdecimal;\n
-                    kprime_u = aline[2]
-                    kprime_b = aline[3]
-                    kprime_v = aline[4]
-                    kprime_r = aline[5]
-                    kprime_i = aline[6]
-                    kdblprime_v = aline[7]
-                    obs_lat = aline[8]
-                    obs_long = aline[9]
-                    obs_elev = aline[10]
-                    obslatdecimal = aline[11]
-                    obslongdecimal = aline[12]
-                    break # valid extinction record
-                elif aline[1] == telescopename : # means no extinction values set
-                    ext_aline = [] # informs later logic no extinction data
-                
-                    
 #
 #   Retrieve Standards file from ASP VSP
 #
@@ -291,11 +243,7 @@ def calculatetransforms():
                         if aline[0] == "R.A.":
                             searchra = str(15*(float(aline[1])+float(aline[2])/60+float(aline[3])/3600))[:7]
                         if aline[0] == "Dec.":
-                            searchdec = str((abs(float(aline[1]))+float(aline[2])/60+float(aline[3])/3600))[:6]
-                            if "-" in aline[1]:
-                                searchdec = "-" + searchdec
-                                
-    
+                            searchdec = str(np.sign(float(aline[1]))*(abs(float(aline[1]))+float(aline[2])/60+float(aline[3])/3600))[:6]
                         if searchra != "Landolt" and searchdec != "Landolt" :
                             break  #  found ra and dec - 
 # Process AIP4WIN, TG or MaxIm file
@@ -317,6 +265,7 @@ def calculatetransforms():
                     ra_dec_entry_window() # Display Window to obtain RA/Dec from user
                     root.wait_window(radecwindow)
                     searchfield = enteredfield  #  use values entered by user
+                    print("searchfield ",searchfield)
                 else:
                     searchfield = "ra=" + searchra + "&dec=" + searchdec  # use values from instrument files
 #  Change "Landolt Field" standard field name to more specific value
@@ -349,60 +298,55 @@ def calculatetransforms():
             
 # Retrieve Standard Field File 
           
-            retrieve_std_mags()
-            
-            
-#            star_id_list = [] # start list of reference star ids - will contain AUID or Boulder ids
-#            star_id_list_label = [] # start matching list to contain VPHOT/VSP label (duplicates at times...)
-#            sf_col_list = ["RA","Dec","U","B","V","R","I"] # list names of each column in std_field_mags array
+            star_id_list = [] # start list of reference star ids - will contain AUID or Boulder ids
+            star_id_list_label = [] # start matching list to contain VPHOT/VSP label (duplicates at times...)
+            sf_col_list = ["RA","Dec","U","B","V","R","I"] # list names of each column in std_field_mags array
 # Create Master Standard Field Magnitudes array
-#            std_field_mags = np.zeros((500,len(sf_col_list))) # allow 500 reference stars
-#
+            std_field_mags = np.zeros((500,len(sf_col_list))) # allow 500 reference stars
+
 ##############################################################################################
             ##################################################################################
 ############
 ##              NEW VSP API CODE TO RETIEVE STANDARD REFERENCE MAGNITUDES
 #
-#            try:
-#                f = urlopen('https://www.aavso.org/apps/vsp/api/chart/?'+ searchfield +'&fov=210&maglimit=16.5&special=std_field&format=json')
-#
-#            except:
-#                Errormsg("Could Not Access AAVSO Web Site")
-#                return
-#            chart_data = json.load(f)   # chart_data is a python dictionary
-#            vsp_ref_data = chart_data.get("photometry")  # vsp_ref_data is a Python list, vsp_ref_data[i] are dictionaries
-#            i = 0 # avoid error if no reference stars
-#            for i in range(len(vsp_ref_data)):
-#                star_id_list.append(vsp_ref_data[i].get("auid"))  # store auid
-#                star_id_list_label.append(str(vsp_ref_data[i].get("label")))  # store VPHOT/VSP label - use string format to match AIP and MaxIm
+            try:
+                f = urlopen('https://www.aavso.org/apps/vsp/api/chart/?'+ searchfield +'&fov=210&maglimit=16.5&special=std_field&format=json')
+
+            except:
+                Errormsg("Could Not Access AAVSO Web Site")
+                return
+            chart_data = json.load(f)   # chart_data is a python dictionary
+            vsp_ref_data = chart_data.get("photometry")  # vsp_ref_data is a Python list, vsp_ref_data[i] are dictionaries
+            i = 0 # avoid error if no reference stars
+            for i in range(len(vsp_ref_data)):
+                star_id_list.append(vsp_ref_data[i].get("auid"))  # store auid
+                star_id_list_label.append(str(vsp_ref_data[i].get("label")))  # store VPHOT/VSP label - use string format to match AIP and MaxIm
 #  Get, convert and save right ascension
-#                line = vsp_ref_data[i].get("ra")  # set up ra parse
-#                delim = [":",":"]  #  set colon parse delimeter
-#                aline = []
-#                lineparse(line,aline,delim)  # parse line
-#                std_field_mags[i,0] = (Decimal(aline[0]) + Decimal(aline[1])/Decimal('60') + Decimal(aline[2])/Decimal(3600))*Decimal(15)  # ref star right ascension in degrees
+                line = vsp_ref_data[i].get("ra")  # set up ra parse
+                delim = [":",":"]  #  set colon parse delimeter
+                aline = []
+                lineparse(line,aline,delim)  # parse line
+                std_field_mags[i,0] = (Decimal(aline[0]) + Decimal(aline[1])/Decimal('60') + Decimal(aline[2])/Decimal(3600))*Decimal(15)  # ref star right ascension in degrees
 #                print("RA - line,aline,std_field_mags[i,0]",line,aline,std_field_mags[i,0])
 #  Get, convert and save declination
-#               line = vsp_ref_data[i].get("dec")  # set up declination parse
-#                aline = []
-#                lineparse(line,aline,delim)
-#                std_field_mags[i,1] = abs(Decimal(aline[0])) + Decimal(aline[1])/Decimal(60) + Decimal(aline[2])/Decimal(3600)
-#                if aline[0][:1] == "-" :  # handle minus sign
-#                    std_field_mags[i,1] = -std_field_mags[i,1]  # add negative sign
+                line = vsp_ref_data[i].get("dec")  # set up declination parse
+                aline = []
+                lineparse(line,aline,delim)
+                std_field_mags[i,1] = Decimal(aline[0]) + Decimal(aline[1])/Decimal(60) + Decimal(aline[2])/Decimal(3600)
 #                print("Dec - line,aline,std_field_mags[i,1]",line,aline,std_field_mags[i,1])
 #  Get and save standard star reference magnitudes     
-#                band_meas = vsp_ref_data[i].get("bands")  # get list of photometry reference values - each entry is a dictionary
-#                bandmapping = ["","","U","B","V","Rc","Ic"]  # .index will provide index for std_field_mags
-#                std_field_mags[i,bandmapping.index("U")] = -1000 # set to no data in case no U value provided
-#                for j in range(len(band_meas)):
-#                    if band_meas[j].get("band") in bandmapping:  # look out for new bands being added
-#                        std_field_mags[i,bandmapping.index(band_meas[j].get("band"))] = band_meas[j].get("mag")
-#                
-#                
-#            std_field_star_count = i + 1
-#           if std_field_star_count < 3 :
-#                Errormsg("Less than 3 Reference Stars - Abort Calculations")
-#                return            
+                band_meas = vsp_ref_data[i].get("bands")  # get list of photometry reference values - each entry is a dictionary
+                bandmapping = ["","","U","B","V","Rc","Ic"]  # .index will provide index for std_field_mags
+                std_field_mags[i,bandmapping.index("U")] = -1000 # set to no data in case no U value provided
+                for j in range(len(band_meas)):
+                    if band_meas[j].get("band") in bandmapping:  # look out for new bands being added
+                        std_field_mags[i,bandmapping.index(band_meas[j].get("band"))] = band_meas[j].get("mag")
+                
+                
+            std_field_star_count = i + 1
+            if std_field_star_count < 3 :
+                Errormsg("Less than 3 Reference Stars - Abort Calculations")
+                return            
             
 #
 #  For NGC7790 and M67, add original Henden star identifiers to master standard field magnitudes array - but use current VSP reference magnitudes
@@ -433,8 +377,6 @@ def calculatetransforms():
                 
                 
 #:
-#            for i in range(len(star_id_list)):
-#                print("\ni,star_id_list[i],std_field_mags(i,) = ",i,star_id_list[i],std_field_mags[i,])            
             
 #  Reference file of standard stars to use created - star_id_list and std_field_mags
 #
@@ -456,10 +398,8 @@ def calculatetransforms():
             u_ind,b_ind,v_ind,r_ind,i_ind = 0,0,0,0,0  #  Set filter used indicators to zero
             meas_JD = str(100000)  # indicate no date in file data
 # Read format indicator
-#
-#
+            
             if fmt_name.get() == "TG / AIP4WIN":  # check if instrument magnitudes are in TG / AIP4WIN format - if so,  
-
 ############################################################################################################################
 #
 # ________________________ Start Processing instrument magnitudes for TG format and store in measured_machine_mags
@@ -693,7 +633,6 @@ def calculatetransforms():
                 vphot_star_id = []
                 for i in range(500):  # nax number of vphot comps allowed is 500 minus the number of old Boulder ids - added later
                     vphot_star_id.append(" ")    # create array with vphot id's tied to AUID  (star_id_list)
-                vphot_col_list = ["Vphot_Star_id","IM","SNR","X","Y","Sky","Air","B-V","Ref-mag","Target estimate","Active"]
                 mmm_obs_count_col_list = ["Star_id_index","u","b","v","r","i"]
                 mmm_obs_count = np.zeros((500,len(mmm_obs_count_col_list))) # Create array to count number of measurements for each filter - for averaging
                 srow = 0 # initialize index of last row with valid data in measured_machine_mags array
@@ -701,8 +640,6 @@ def calculatetransforms():
                 one_msg_line = ""
                 mmm_data_started = "N"                
                 for file_i in range(len(file_namelist)): # process each file listed
-#                    print("\n\n\n\n****************************************************************************************************")
- #                   print("file_i = ",file_i)
                     measurements = open(file_namelist[file_i],mode="r")  # retrieve instrument measurements file
                     starline_found = "N"
                     activestars = 0 # set to count active stars to ensure some found 
@@ -735,7 +672,17 @@ def calculatetransforms():
                                 continue
                                 
                             if aline[0] == "Star": # Found line ahead of measurement data - set to process measurement lines
+                                vphot_col_list = []
+                                aline[0] = "Vphot_Star_id" # clarify this is a VPhot star id
+                                for count in range(len(aline)):
+                                    if aline[count][-4:] == "-mag":
+                                        aline[count] = "Ref-mag"  # allow single referce
+                                    
+                                    vphot_col_list.append(aline[count])                                    
+#                                    print("count, value ", count, aline[count])
                                 starline_found = "Y"
+#                                print("vphot_col_list",vphot_col_list)
+                                
                             
                             continue  # done looking at header lines - most ignored
 #
@@ -808,77 +755,14 @@ def calculatetransforms():
                                      break # found match - go to next line
                                 
                                 continue # search next standard line to find match
-                    num_meas_stars = srow + 1 # total number of stars with measurements
-
-#
-################################################################################################################################################################
-#
-#      If requested, apply extinction to VPHOT instrument magnitudes here for each file
-#
-#
-#                   Test if extinction requested
-#                    print("Entry extinction_setting = ",extinction_setting.get())
-                    ext_used = "No"
-                    if extinction_setting.get() == "Y" : 
-                        if meas_JD == str(100000):
-                            Errormsg("No JD observation date in file - extinction can not be calculated. \nTransforms will be computed without extinction.")
-                        elif len(ext_aline) == 0 : # no extinction data for this telescope
-                            Errormsg("No extinction settings for this telescope")
-                            extinction_setting.set("N")
-                        else: # Apply Extinction
-                            
-#
-# mmm_col_lst = ["Star_id_index","RA","Dec","u","b","v","r","i"]
-#
-#  First, insert RA/Dec for each star into measured_machine_mags                                                                   #
-                                            
-                            ext_used = "Yes"
-                            for i in range(num_meas_stars):
-                                star_id_ref = int(measured_machine_mags[i,mmm_col_lst.index("Star_id_index")])
-                                measured_machine_mags[i,mmm_col_lst.index("RA")] = std_field_mags[star_id_ref,sf_col_list.index("RA")]
-                                measured_machine_mags[i,mmm_col_lst.index("Dec")] = std_field_mags[star_id_ref,sf_col_list.index("Dec")]
-#  Adjust instrument magnitudes for this VPHOT file i.e. one filter with one time of observation
-                            first_order_list = [kprime_u,kprime_b,kprime_v,kprime_r,kprime_i]
-                            filtlist = ["u","b","v","r","i"]
-#                         
-# Format of telescope line "ext_aline" -  #  'Telescope id';ex_tel_id;k'u;k'b;k'v;k'r;k'i;k"bbv;obs_lat;obs_long;obs_elev;obslatdecimal;obslongdecimal,\n
-
-                            obs_lat_float_decimal = float(obslatdecimal)
-                            obs_long_float_decimal = float(obslongdecimal)
-                            obs_elev_float = float(obs_elev)
-#                            print("obs_lat,obs_long_obs_elev = ",obs_lat_float_decimal,obs_long_float_decimal,obs_elev_float)
-                            obs_location = EarthLocation(lat=obs_lat_float_decimal*u.deg, lon=obs_long_float_decimal*u.deg, height=obs_elev_float*u.m)
-                            for i in range(num_meas_stars):
-                                star_coord = (SkyCoord(measured_machine_mags[i,mmm_col_lst.index("RA")],
-                                              measured_machine_mags[i,mmm_col_lst.index("Dec")], unit = "deg"))
-                                meas_JD_float = float(meas_JD)
-#                                print("\n\n\n\nmeas_JD_float = ",meas_JD_float)
-                                t = Time(val = meas_JD_float, format='jd' )
-#                                print("t= ",t)
-                                star_loc  = star_coord.transform_to(AltAz(obstime=t,location=obs_location))
-                                airmass = star_loc.secz
-#                                print("\nstar, airmass = ",star_id_list[int(measured_machine_mags[i,mmm_col_lst.index("Star_id_index")])],airmass)
-                                filt_index = mmm_col_lst.index(currentfilter)
- #                               print("\nfilt_index , filt = ",filt_index,filtlist[filt_index-3])
-                                if measured_machine_mags[i,filt_index] != 0 and measured_machine_mags[i,filt_index] != -1000 : # skip empty cells and FAlSE stars
-                                    measured_machine_mags[i,filt_index] -= airmass*first_order_list[filt_index-3]  # apply extinction, note offset of 4 between ext_aline and mmm_col_list
                                 
-                                
-
-
-    
-                            
-
-#  Apply Extinction
-
-#        End of extinction application                        
-#                                                   
-################################################################################################################################################################                
+                
                 if star_id_not_matched_list != "":
                     Errormsg("Reference Star ids not found in VSP -\n" + star_id_not_matched_list + one_msg_line + "\nStars Excluded from Calculation")
                 if activestars < 2:
                     Errormsg("Less than two active stars in VPhot File")
                     return
+                num_meas_stars = srow + 1 # total number of stars with measurements
 #
 # Search all magnnitudes and set any 0 to -1000 indicating no measurement or bad measurement
 # mmm_col_lst = ["Star_id_index","RA","Dec","u","b","v","r","i"]
@@ -889,27 +773,13 @@ def calculatetransforms():
                             measured_machine_mags[i,j] = -1000
 
 
-
-##################################################################################################################################
-##################################################################################################################################
-#
-                                
-                                
-                        
-                    
-                    
                 
-# For each star, compute airmass
-                    
-##################################################################################################################################
-##################################################################################################################################
-#                for i in range (num_meas_stars+2):
-#                    print("\ni, measured_machine_mags[i,] = ",i, measured_machine_mags[i,])
-                                   
+                     
+                                    
 
         
                                  
-            config_file.close()  # Close Photometry Transform Coniguration Data file
+ 
 ########################################################################################################
 #
 # Create Array of Various Magnitude Differences for Transform Calculation - md== magnitude difference
@@ -927,7 +797,7 @@ def calculatetransforms():
             if num_meas_stars <2:
                 Errormsg("No valid reference data to compute transforms")
                 return
-            md_col_list = ["Star_id_index","RA","Dec","U-B","B-V","V-R","R-I","U-u","B-b","V-v","R-r","I-i","u-b","b-v","v-r","r-i","V-I","v-i"]
+            md_col_list = ["Star_id_index","RA","Dec","U-B","B-V","B-R","B-I","V-R","R-I","U-u","B-b","V-v","R-r","I-i","u-b","b-v","b-r","b-i","v-r","r-i","V-I","v-i"]
             md = np.zeros((num_meas_stars,len(md_col_list))) # magnitude differences array
             for i in range(num_meas_stars):
                 md[i,md_col_list.index("Star_id_index")] = measured_machine_mags[i,mmm_col_lst.index("Star_id_index")] # Star id index number
@@ -936,6 +806,8 @@ def calculatetransforms():
                 md[i,md_col_list.index("Dec")] = std_field_mags[j,sf_col_list.index("Dec")]
                 md[i,md_col_list.index("U-B")] = std_field_mags[j,sf_col_list.index("U")] - std_field_mags[j,sf_col_list.index("B")]
                 md[i,md_col_list.index("B-V")] = std_field_mags[j,sf_col_list.index("B")] - std_field_mags[j,sf_col_list.index("V")]
+                md[i,md_col_list.index("B-R")] = std_field_mags[j,sf_col_list.index("B")] - std_field_mags[j,sf_col_list.index("R")]
+                md[i,md_col_list.index("B-I")] = std_field_mags[j,sf_col_list.index("B")] - std_field_mags[j,sf_col_list.index("I")]
                 md[i,md_col_list.index("V-R")] = std_field_mags[j,sf_col_list.index("V")] - std_field_mags[j,sf_col_list.index("R")]
                 md[i,md_col_list.index("R-I")] = std_field_mags[j,sf_col_list.index("R")] - std_field_mags[j,sf_col_list.index("I")]
                 md[i,md_col_list.index("V-I")] = std_field_mags[j,sf_col_list.index("V")] - std_field_mags[j,sf_col_list.index("I")]
@@ -959,11 +831,20 @@ def calculatetransforms():
                 md[i,md_col_list.index("v-i")] = measured_machine_mags[i,mmm_col_lst.index("v")] - measured_machine_mags[i,mmm_col_lst.index("i")]
                 if md[i,md_col_list.index("v-i")] == 0:
                     md[i,md_col_list.index("v-i")] = -1000  # indicate from bad measurments - e.g. both values set to -1000
+                md[i,md_col_list.index("b-r")] = measured_machine_mags[i,mmm_col_lst.index("b")] - measured_machine_mags[i,mmm_col_lst.index("r")]
+                if md[i,md_col_list.index("b-r")] == 0:
+                    md[i,md_col_list.index("b-r")] = -1000  # indicate from bad measurments - e.g. both values set to -1000
+                md[i,md_col_list.index("b-i")] = measured_machine_mags[i,mmm_col_lst.index("b")] - measured_machine_mags[i,mmm_col_lst.index("i")]
+                if md[i,md_col_list.index("b-i")] == 0:
+                    md[i,md_col_list.index("b-i")] = -1000  # indicate from bad measurments - e.g. both values set to -1000
+                    
+                    
+                    
                                        
 # Create list of instructions to generate transforms - list element sequence is  - transform, x values, y values,(Y/N inverse indicator)
-            transform_inst = ["Tub","U-B","u-b","Y","Tbv","B-V","b-v","Y","Tvr","V-R","v-r","Y",
+            transform_inst = ["Tub","U-B","u-b","Y","Tbv","B-V","b-v","Y","Tbr","B-R","b-r","Y","Tbi","B-I","b-i","Y","Tvr","V-R","v-r","Y",
                        "Tri","R-I","r-i","Y","Tu_ub","U-B","U-u","N","Tb_ub","U-B","B-b","N",
-                       "Tb_bv","B-V","B-b","N","Tv_bv","B-V","V-v","N","Tv_vr","V-R","V-v","N",
+                       "Tb_bv","B-V","B-b","N","Tb_br","B-R","B-b","N","Tb_bi","B-I","B-b","N","Tv_bv","B-V","V-v","N","Tv_vr","V-R","V-v","N",
                        "Tr_vr","V-R","R-r","N","Tr_ri","R-I","R-r","N",
                        "Ti_ri","R-I","I-i","N","Tvi","V-I","v-i","Y","Tv_vi","V-I","V-v","N","Ti_vi","V-I","I-i","N",
                        "Tr_vi","V-I","R-r","N"]
@@ -997,6 +878,14 @@ def calculatetransforms():
                 if r_ind == 1:
                     transform_names.append("Tr_vi")
                     
+            if b_ind ==1 and r_ind == 1:
+                transform_names.append("Tbr")
+                transform_names.append("Tb_br")
+            if b_ind ==1 and i_ind == 1:
+                transform_names.append("Tbi")
+                transform_names.append("Tb_bi")
+                
+                    
             
             if len(transform_names) == 0 :  # check that some transform values can be calculated
                 Errormsg("No standard transforms can be computed with filters submitted")
@@ -1016,13 +905,7 @@ def calculatetransforms():
             tel = tel_id
             lab_text = "    Telescope = " + tel + "\nJulian Date =" + str(meas_JD)
             titlab = []
-            if ext_used == "Yes" :
-                line2 = "    Extinction Applied"
-            elif ext_used == "No":
-                line2 = "   Extinction Not Used"
-            else:
-                Errormsg("Extinction coding error")
-            tittext = ["    Transform Values\n" + line2,lab_text,"  Select Transforms for\n   Review and Analysis"]
+            tittext = ["    Transform Values",lab_text,"  Select Transforms for\n   Review and Analysis"]
             for i in range(3):
                 titlab.append(Text(app,width=24,height=2,bg="#E0FFFF",pady=3,padx=30))
                 titlab[i].insert(0.0,tittext[i])
@@ -1401,87 +1284,12 @@ def lineparse(line,linelist,delim):
             temp = line[i:j].strip()
             linelist.append(temp)
             i=j+1
-    if i<=j and i != len(line): # check field to right of last delimiter for content 
+    if i<j and i != len(line): # check field to right of last delimiter for content 
         temp = line[i:].strip()
         if temp != "":
             linelist.append(temp)
-   
 
-########################################################
-########################################################
-#                                                      #
-#  Retrieve Standard Star Magnitudes Routine           #
-#                                                      #
-#                                                      #
-########################################################
-########################################################
-def retrieve_std_mags():
-    global star_id_list,star_id_list_label,std_field_mags,std_field_star_count,searchfield,sf_col_list
-    
-           
-# Retrieve Standard Field File 
-      
-    star_id_list = [] # start list of reference star ids - will contain AUID or Boulder ids
-    star_id_list_label = [] # start matching list to contain VPHOT/VSP label (duplicates at times...)
-    sf_col_list = ["RA","Dec","U","B","V","R","I","Uerr","Berr","Verr","Rerr","Ierr"] # list names of each column in std_field_mags array
-# Create Master Standard Field Magnitudes array
-    std_field_mags = np.zeros((500,len(sf_col_list))) # allow 500 reference stars
-
-##############################################################################################
-##################################################################################
-############
-##              NEW VSP API CODE TO RETIEVE STANDARD REFERENCE MAGNITUDES
-#
-    try:
-        f = urlopen('https://www.aavso.org/apps/vsp/api/chart/?'+ searchfield +'&fov=210&maglimit=16.5&special=std_field&format=json')
-
-    except:
-        Errormsg("Could Not Access AAVSO Web Site")
-        return
-    chart_data = json.load(f)   # chart_data is a python dictionary
-    vsp_ref_data = chart_data.get("photometry")  # vsp_ref_data is a Python list, vsp_ref_data[i] are dictionaries
-    i = 0 # avoid error if no reference stars
-    for i in range(len(vsp_ref_data)):
-        star_id_list.append(vsp_ref_data[i].get("auid"))  # store auid
-        star_id_list_label.append(str(vsp_ref_data[i].get("label")))  # store VPHOT/VSP label - use string format to match AIP and MaxIm
-#  Get, convert and save right ascension
-        line = vsp_ref_data[i].get("ra")  # set up ra parse
-        delim = [":",":"]  #  set colon parse delimeter
-        aline = []
-        lineparse(line,aline,delim)  # parse line
-        std_field_mags[i,0] = (Decimal(aline[0]) + Decimal(aline[1])/Decimal('60') + Decimal(aline[2])/Decimal(3600))*Decimal(15)  # ref star right ascension in degrees
-#                print("RA - line,aline,std_field_mags[i,0]",line,aline,std_field_mags[i,0])
-#  Get, convert and save declination
-        line = vsp_ref_data[i].get("dec")  # set up declination parse
-        aline = []
-        lineparse(line,aline,delim)
-        std_field_mags[i,1] = abs(Decimal(aline[0])) + Decimal(aline[1])/Decimal(60) + Decimal(aline[2])/Decimal(3600)
-        if aline[0][:1] == "-" :  # handle minus sign
-            std_field_mags[i,1] = -std_field_mags[i,1]  # add negative sign
-#                print("Dec - line,aline,std_field_mags[i,1]",line,aline,std_field_mags[i,1])
-#  Get and save standard star reference magnitudes     
-        band_meas = vsp_ref_data[i].get("bands")  # get list of photometry reference values - each entry is a dictionary
-        bandmapping = ["","","U","B","V","Rc","Ic"]  # .index will provide index for std_field_mags
-        std_field_mags[i,bandmapping.index("U")] = -1000 # set to no data in case no U value provided
-        for j in range(len(band_meas)):
-            if band_meas[j].get("band") in bandmapping:  # look out for new bands being added
-                std_field_mags[i,bandmapping.index(band_meas[j].get("band"))] = band_meas[j].get("mag")
-# mag error is offset by 5 from mags - i.e. column for magerror = column for mag + 5 for every filter
-                std_field_mags[i,bandmapping.index(band_meas[j].get("band")) + 5] = band_meas[j].get("error")
-        
-    std_field_star_count = i + 1
-    if std_field_star_count < 3 :
-        Errormsg("Less than 3 Reference Stars - Abort Calculations")
-        return            
-
-#####################################################################################################
-#####################################################################################################
-#
-#
-#                  End of Standard Reference Mag retrieval routine
-#
-#####################################################################################################
-#####################################################################################################
+#############################################
 # Create Get File Name button method        #
 #############################################
 
@@ -1523,7 +1331,6 @@ def tel_id_pick(event):
         enter_button = Button(tel_id_win,text="Enter", command = save_new_tel_id)
         enter_button.grid(row=3)
         
-        
 
 
 def save_new_tel_id():
@@ -1557,10 +1364,9 @@ def save_new_tel_id():
 ######################################################
 
 def savetransforms():
-    global transform_names,transform_val,transform_val_err,transform_val_r2,meas_JD,tel_id,std_field_name,ext_used
+    global transform_names,transform_val,transform_val_err,transform_val_r2,meas_JD,tel_id,std_field_name
     curtime = strftime("%Y%m%d%H%M%S",gmtime())
-    record = [tel_id,meas_JD,curtime,transform_names,transform_val,transform_val_err,transform_val_r2,std_field_name,ext_used]
-#    print("len(record), record = ",len(record),record)
+    record = [tel_id,meas_JD,curtime,transform_names,transform_val,transform_val_err,transform_val_r2,std_field_name]
     transform_file = open("transform_values.ptgp","ab")
     pickle.dump(record,transform_file)
     transform_file.close()
@@ -1677,9 +1483,7 @@ def mergesets():
 # Create new window
     mergewindow = Toplevel()
     mergewindow.title("Review and Average Different Transform Sets - TG " + version)
-    # size window
-    w, h = root.winfo_screenwidth(), root.winfo_screenheight()
-    mergewindow.geometry("%dx%d+0+0" % (.9*w, .8*h))
+    mergewindow.geometry("800x600")
     canvas2 = Canvas(mergewindow)
     root2 = Frame(canvas2)
     root2.bind("<Configure>",myfunction2)
@@ -1699,27 +1503,14 @@ def mergesets():
     Label(root2,text="(JD--YY_MM_DD_HH:MM:SS -- field name)").grid(row=5,column=0,columnspan=2)    
     tel_id_saved_xforms = []
     transform_file = open("transform_values.ptgp","rb")
-#    transform_file = codecs.open('transform_values.ptgp', encoding='utf-8'):
-#    print("transform_file ", transform_file)
     count = 0  # set count of number of records for telescope
     for i in range(1000):  # get all records for selected telescope
         try:
             record = pickle.load(transform_file)
-#             print("record=",record)
-#            print("\nlen(record),record[len(record)-1] = ",len(record),record[len(record)-1])
             if record[0] == tel_id:
-#
-#  NEED TO ADD CODE TO HANDLE OLD TRANSFORM RECORDS WITHOUT EXTINCTION FIELD ADDED  - FIX NEEDED
-#
-#                print("record before append = ",record)
-                if len(record) == 8:  # this i an old version record before extinction added
-                    record.append("No") # Indicate old version had no extinction applied
-
                 tel_id_saved_xforms.append(record)
-#                print("record after append = ",record)    
                 count = count + 1
-        except Exception as e:
-            print("Error Code = ",e)
+        except:
             break # end of file
             
     listobs = "" # create string of obs set julian date + transform create date/time
@@ -1768,10 +1559,9 @@ def getlist():
         Label(root2,text="   YY_MM_DD transforms computed",font="10").grid(row=4,column=2,columnspan=2,sticky="E")
         Label(root2,text="HH:MM:SS transforms computed",font="10").grid(row=5,column=2,columnspan=2,sticky="E")
         Label(root2,text="Standards Field (LF=Landolt RA/Dec)",font="10").grid(row=6,column=2,columnspan=2,sticky="E")
-        Label(root2,text="Extinction Applied?",font="10").grid(row=7,column=2,columnspan=2,sticky="E")
         table_start_row=1
         for i in range(len(allxforms)):  # display list of all possible transforms
-            Label(root2,text=(allxforms[i] + " "),font="9").grid(row=table_start_row+7+i,column=3,sticky="E")
+            Label(root2,text=(allxforms[i] + " "),font="9").grid(row=table_start_row+6+i,column=3,sticky="E")
         remove_col = "N"  # indicate not removing columns
         for i in  range(len(obs_selected)):
             Obs_Set_Columns(root2,(table_start_row+1),(i+4),obs_selected[i]) # Display each column of data
@@ -1780,7 +1570,7 @@ def getlist():
             for i in range(len(obs_selected),len(prev_obs_selected)):
                 dummy = 0  # only so remove process will work - not actually used
                 Obs_Set_Columns(root2,(table_start_row+1),(i+4),dummy)
-        avg_selected_observations = Button(root2,text = "Compute Average of Checked Transform Sets",command = avg_sets,font=10,bg="#E0FFFF").grid(row=24,column=4,columnspan=10)
+        avg_selected_observations = Button(root2,text = "Compute Average of Checked Transform Sets",command = avg_sets,font=10,bg="#E0FFFF").grid(row=27,column=4,columnspan=10)
     else:
         message = "Reduce to %3.0f or less selections" % max_selected_sets
         Errormsg(message)
@@ -1791,100 +1581,6 @@ def getlist():
 #                                                                               ##
 ##################################################################################
 ##################################################################################
-def ra_dec_validate(ra,dec):
-    global radecimal,decdecimal,errflag,fmt_type
-#
-#  Ensure valid Right Ascension / Declination inputs
-# Validate text input as xxx.xx , DD:MM:SS or HH:MM:SS
-#   errflag = 0 if valid, -1 if invalid ra,  -2 if invalid dec
-#   fmt_type = 1 if decimal, 2 if colon format (HH:MM:SS or DD:MM:SS), 3 if invalid
-#
-    fmt_type = 3 # initialize as invalid format - change if all tests passed
-#
-# Test Right Ascension Input    
-    
-    
-    if ra.find(":") > 0 : # if colon found assume HH:MM:SS format
-        aline = [] # create holding list for parsed oneline
-        delim = [":",":"]  # colon delimeter
-        if ra[len(ra)-1:] == ":" : # check is user left final field empty
-            ra = ra + "00" # enter zero value
-        lineparse(ra,aline,delim)
-        for i in range(0,3) :
-            if aline[i] == "" :
-                aline[i] = "00"
-        if len(aline) != 3:
-            errflag = -1
-            return -1
-        try:
-            if float(aline[0]) >= 24 or float(aline[1]) >= 60 or float(aline[2]) >= 60  or float(aline[0]) <0 :
-                errflag = -1
-                return -1
-            else:
-                ra_float = np.sign(float(aline[0]))*(15*(abs(float(aline[0]) + float(aline[1])/60 + float(aline[2])/3600)))
-                radecimal = str(ra_float)[:7]
-        except:
-            errflag = -1
-            return
-        fmt_type = 2
-        
-    else:  # should be DDD.DD
-        try:
-            if float(ra) > 360 or float(ra) < -180:
-                errflag = -1
-                return errflag
-        except:
-            errflag = -1
-            return errflag
-        radecimal = ra
-        fmt_type = 1
-        
-    
-#
-# Test Declination Input
-#
-    if dec.find(":") > 0 : # if colon found assume DD:MM:SS
-        aline = [] # parse holding list
-        delim = [":",":"] # colon delimeter
-        if dec[len(dec)-1:] == ":" : # check for last field left empty
-            dec = dec + "00" # enter zero value
-        lineparse(dec,aline,delim)
-        for i in range(0,3) :
-            if aline[i] == "" :
-                aline[i] = "00"
-        if len(aline) != 3:
-            errflag = -2
-            return errflag
-        try:
-            if abs(float(aline[0]) >= 90) or float(aline[1]) > 60 or float(aline[2]) >60 :
-                errflag = -1
-                return errflag
-        except:
-            errflag = -2
-            return errflag
-        fmt_type = 2
-        decdecimal = str(float(aline[0]) + float(aline[1])/60 + float(aline[2])/3600)[:6] 
-        
-    else:  # should be DD.DD
-        try:
-            if abs(float(dec)) > 90 :
-                errflag = -2
-                return errflag
-        except:
-            errflag = -2
-            return errflag
-        fmt_type = 1
-        decdecimal = dec
-#
-#  All tests passed
-#
-    errflag = 0
-    return errflag
-        
-#
-#  END OF RA/DEC of format review
-#
-
         
 def ra_dec_entry_window():
     global raentry,decentry,radecwindow
@@ -1900,18 +1596,33 @@ def ra_dec_entry_window():
     Button(radecwindow,text="Enter",command = quitra,font="12").grid(row=3,columnspan=2)
 
 def quitra():
-    global raentry,decentry,radecwindow,enteredfield,radecimal,decdecimal,errflag,fmt_type
+    global raentry,decentry,radecwindow,enteredfield
     rainput = raentry.get()
     decinput = decentry.get()
-    ra_dec_validate(rainput,decinput)
-    if errflag == 0 :
-        enteredfield = "ra="+ radecimal + "&dec="+ decdecimal
-    else:
-        if errflag == -1:
-            Errormsg("Invalid Right Ascension")
-        else:
-            Errormsg("Invalid Declination")
+    try:
+        if rainput.find(":") > 0 : # if colon found assume HH:MM:SS format
+            aline = [] # create holding list for parsed oneline
+            delim = [":",":"]  # colon delimeter
+            lineparse(rainput,aline,delim)
+            searchra = str(15*(float(aline[0])+float(aline[1])/60+float(aline[2])/3600))[:7]
+        else:  # assume DDD.xxx format
+            searchra = rainput
+            
+    except:
+        Errormsg("Invalid RA Format")
         return
+    try:
+        if decinput.find(":") > 0 : # if colon found assume +/-DD:MM:SS format
+            aline = [] # create holding list for parsed oneline
+            delim = [":",":"]  # colon delimeter
+            lineparse(decinput,aline,delim)
+            searchdec = str(np.sign(float(aline[0]))*(abs(float(aline[0]))+float(aline[1])/60+float(aline[2])/3600))[:7]
+        else: # assume DDD.xxx format
+            searchdec = decinput
+    except:
+        Errormsg("Invalid Dec Format")
+        return
+    enteredfield = "ra="+searchra+"&dec="+searchdec
     radecwindow.destroy()
     
     
@@ -1967,13 +1678,6 @@ class Obs_Set_Columns(Frame):
         if remove_col == "Y":
             self.field = " "
         self.t4.insert(0.0,self.field)
-# Add code showing if extinction applied
-        self.te = Text(master,width = 3,height=1)
-        self.te.grid(row=boxrow+5,column=boxcol,pady=3)
-        self.ext_used = self.record[8]
-        self.te.insert(0.0,self.ext_used)
-#
-#  NEED FIX - OLDER VERSIONS DON'T HAVE         
         self.xforms_calc = self.record[4] #  retrieve computed transforms for observation
         self.xforms_calc_err = self.record[5] # retrieve error values
         self.xforms_calc_r2 = self.record[6] # retrieve r^2 values
@@ -1988,7 +1692,7 @@ class Obs_Set_Columns(Frame):
             if remove_col == "Y":
                 self.xform_val_txt = "  N/A "
             self.t4.insert(0.1,self.xform_val_txt)
-            self.t4.grid(row= boxrow + 6 + i, column = boxcol)
+            self.t4.grid(row= boxrow + 5 + i, column = boxcol)
             
 #  method to track check boxes above each columns
     def update_status(self):  #  Track observations picked for use
@@ -2079,11 +1783,11 @@ def avg_sets():
         xforms_txt.append(xform_val_txt)
         t4 = Text(root2,width=28,height=1,pady=4, bg = "yellow")
         t4.insert(0.1,xform_val_txt)
-        t4.grid(row=8+i,column=12)
+        t4.grid(row=7+i,column=12)
     Label(root2,text="Avg Transform",bg="yellow").grid(row=3,column=12)
 
 # Add Button to allow saving of average transforms
-    save_xforms_btn = Button(root2,text = "Save File of Average Transforms\nEnter/Select File Name\n",command = export_transforms,font=10,bg="#E0FFFF").grid(row=25,column=4,columnspan=10)
+    save_xforms_btn = Button(root2,text = "Save File of Average Transforms\nEnter/Select File Name\n",command = export_transforms,font=10,bg="#E0FFFF").grid(row=28,column=4,columnspan=10)
 
 ################################################################################
 #                                                                              #
@@ -2098,7 +1802,7 @@ def export_transforms():
     curtime = strftime("%Y_%m_%d_%H:%M:%S",gmtime())
     avg_xforms_record = "[Setup]\ndescription= TG" + version 
     avg_xforms_record = avg_xforms_record + ", Telescope= " + tel_id +", Time created (UT) = "+ curtime + "\n[Coefficients]\n"
-    for i in range(len(output_file_xform_val_list)): 
+    for i in range(len(output_file_xform_val_list)):
         avg_xforms_record = avg_xforms_record + output_file_xform_val_list[i] + "\n"
     avg_xforms_record = avg_xforms_record + "[Error]\n"
     for i in range(len(output_file_xform_err_list)):
@@ -2111,816 +1815,9 @@ def export_transforms():
     fname = export_file.name
     MessageBox("Average Transforms for Telescope " + tel_id + "\nSaved at UT\n" + curtime + " to file\n" + fname)
     
-######################################################################
-######################################################################
-##                                                                  ##
-##          Create Extinction Settings Window for input of          ##
-##        extinction coefficients and observing site lat/long       ##
-##                                                                  ##
-######################################################################
-######################################################################
+def myfunction(event):
+    canvas1.configure(scrollregion=canvas1.bbox("all"))
 
-def save_extinction():
-    global extinctwindow
-    global ex_tel_id_box,ex_tel_id,kprime_u,kprime_b,kprime_v,kprime_r,kprime_i,kdblprim_b,obs_lat,obs_long,obs_elev
-    global radecimal,decdecimal,errflag,fmt_type
-#
-#  Validate lat/long input
-#
-    latentered = obs_lat.get()
-    lat = latentered
-    if "n" in latentered or "N" in latentered or "S" in latentered or "s" in latentered :  # N/n/S/s found
-        lat  = latentered[:len(latentered)-1] # remove N/n/S/s
-    aline = []
-    if ":" in lat : 
-        lineparse(lat,aline,[":",":"])
-    else:
-        aline.append(lat) # set aline[0]
-    if len(aline) == 3  :  # assume xxx:xx:xx format
-        try:
-            obslatfloat = abs(float(aline[0]) + float(aline[1])/60 + float(aline[2])/3600)
-            if obslatfloat > 90 :
-                Errormsg("Latitude Format Error")
-                return
-            obslatdecimal = str(obslatfloat)[:7]
-            if "s" in latentered or "S" in latentered or float(aline[0]) < 0 :
-                obslatdecimal = "-" + obslatdecimal
-        except:
-            Errormsg("Latitude Format Error")
-            return
-#####
-#  assuming latitude is +/- DD.DDD
-#
-    else:
-        try:
-            obslatfloat = abs(float(lat))
-            if obslatfloat > 90 :
-                Errormsg("Latitude Format Error")
-                return
-            obslatdecimal = str(obslatfloat)[:7]
-            if "s" in latentered or "S" in latentered or float(aline[0]) < 0 :
-                obslatdecimal = "-" + obslatdecimal
-        except:
-            Errormsg("Latitude Format Error")
-            return
-        
-#
-# Validate longitude
-#
-    longentered = obs_long.get()
-    long = longentered
-    if "W" in longentered or "w" in longentered or "E" in longentered or "e" in longentered :
-        long = longentered[:len(longentered)-1] # assumes last character - remove
-    aline = []
-    lineparse(long,aline,[":",":"])
-    if len(aline) == 3 : # assume DDD:MM:SS format
-        try:
-            obslongfloat = abs(float(aline[0])) + float(aline[1])/60 + float(aline[2])/3600
-        except:
-            Errormsg("Longitude Format Error")
-            return
-    else:  # assuming DDD.DDD format
-        try:
-            obslongfloat = abs(float(long))
-        except:
-            Errormsg("Longitude Format Error")
-            return
-    if obslongfloat < -180 or obslongfloat > 360 :
-        Errormsg("Longitude Format Error:")
-        return
-    obslongdecimal = str(obslongfloat)[:8]
-    if "W" in longentered or "w" in longentered or float(aline[0]) < 0 :
-        obslongdecimal = "-" + obslongdecimal
-    config_file = open("Photometry_Transform_Config_Data.txt","r")
-    outputline = []
-    for line in config_file: # read each line
-        aline = []
-        lineparse(line,aline,[";",";"])
-        if aline[1] != ex_tel_id : # if not current scope data, write existing data into output file
-            outputline.append(line)
-            continue
-        newline = ("Telescope_id;" + ex_tel_id + ";" + kprime_u.get() + ";" + kprime_b.get() + ";" +kprime_v.get() + ";" +kprime_r.get() + ";" 
-            + kprime_i.get() + ";" + kdblprim_b.get() + ";" + obs_lat.get() + ";" + obs_long.get() + ";" + obs_elev.get() + ";" +
-            obslatdecimal + ";" + obslongdecimal + ";\n")
-        outputline.append(newline)
-    config_file.close()
-    config_file = open("Photometry_Transform_Config_Data.txt","w")
-    config_file.writelines(outputline)
-    config_file.close()
-    MessageBox("Extinction Values Saved for " + ex_tel_id)
-    extinctwindow.destroy()
-    
-
-
-def ex_tel_id_pick(event):
-    global ex_tel_id_box,ex_tel_id,kprime_u,kprime_b,kprime_v,kprime_r,kprime_i,kdblprim_b,obs_lat,obs_long,obs_elev
-    ex_tel_id = ex_tel_id_box.get()
-    config_file = open("Photometry_Transform_Config_Data.txt","r") # open file for reading
-    for line in config_file:
-        aline = []  # hold parsed line
-        lineparse(line,aline,[";",";"]) # on ; is delimiter
-#
-#  Format of line:
-#        newline = ("Telescope_id;" + ex_tel_id + ";" + kprime_u.get() + ";" + kprime_b.get() + ";" +kprime_v.get() + ";" +kprime_r.get() + ";" 
-#            + kprime_i.get() + ";" + kdblprim_b.get() + ";" + obslat.get() + ";" + obslong.get() + ";" + 
-#            obslatdecimal + ";" + obslongdecimal + ";\n")
-#
-#  'Telescope id';ex_tel_id;k'u;k'b;k'v;k'r;k'i;k"bbv;obs_lat;obs_long;obs_elev;obslatdecimal;obslongdecimal;n
-#
-#  Initialize with previous values or defaults
-#
-        if aline[1] == ex_tel_id:
-            if len(aline) == 2:  # extinction data not present, set defaults
-                kprime_u.delete(0,END)
-                kprime_u.insert(0,"0.6")
-                kprime_b.delete(0,END)
-                kprime_b.insert(0,"0.4")
-                kprime_v.delete(0,END)
-                kprime_v.insert(0,"0.2")
-                kprime_r.delete(0,END)
-                kprime_r.insert(0,"0.1")
-                kprime_i.delete(0,END)
-                kprime_i.insert(0,"0.08")
-                kdblprim_b.delete(0,END)
-                kdblprim_b.insert(0,"0.01")
-                obs_lat.delete(0,END)
-                obs_long.delete(0,END)
-                obs_elev.delete(0,END)
-                obs_elev.insert(0,"0")
-                
-            else:
-                kprime_u.delete(0,END)
-                kprime_u.insert(0,aline[2])
-                kprime_b.delete(0,END)
-                kprime_b.insert(0,aline[3])
-                kprime_v.delete(0,END)
-                kprime_v.insert(0,aline[4])
-                kprime_r.delete(0,END)
-                kprime_r.insert(0,aline[5])
-                kprime_i.delete(0,END)
-                kprime_i.insert(0,aline[6])
-                kdblprim_b.delete(0,END)
-                kdblprim_b.insert(0,aline[7])
-                obs_lat.delete(0,END)
-                obs_lat.insert(0,aline[8])
-                obs_long.delete(0,END)
-                obs_long.insert(0,aline[9])
-                obs_elev.delete(0,END)
-                obs_elev.insert(0,aline[10])
-                
-    return
-
-def extinction():
-    global ex_tel_id_box, extinctwindow, kprime_u,kprime_b,kprime_v,kprime_r,kprime_i,kdblprim_b,obs_lat,obs_long,obs_elev,extinction_setting
-    extinctwindow = Toplevel()
-    extinctwindow.title("Set Up Exinction")
-    try:
-        config_file = open("Photometry_Transform_Config_Data.txt","r") # open file for reading
-    except:
-        Errormsg("Enter new telescope name on main menu")
-    ex_tel_id_list = []  # start telescope id list
-    for line in config_file:
-        aline = []  # hold parsed line
-        lineparse(line,aline,[";",";"]) # on ; is delimiter
-        if (aline[1] != "Add Scope"):
-            ex_tel_id_list.append(aline[1])
-    config_file.close()
-#  set up combobox for selection/addition
-            
-    Label(extinctwindow,text = "Select Telescope ",font=12,bg="#E0FFFF").grid(row=0,column=0,sticky = "W")
-    ex_tel_id_picked_var = StringVar()
-    ex_tel_id_box = ttk.Combobox(extinctwindow,width=10,textvariable=ex_tel_id_picked_var,values=ex_tel_id_list)
-    ex_tel_id_box.state(['readonly'])
-    ex_tel_id_box.bind("<<ComboboxSelected>>",ex_tel_id_pick)
-    ex_tel_id_box.current(0)
-    ex_tel_id_box.grid(row=0,column=1)
-    Label(extinctwindow, text = "Enter First Order Extinction Coefficients:",font = 12).grid(row=1,column=0,columnspan=2,sticky = "W")
-    Label(extinctwindow, text = "k'u = ",font = 12).grid(row=2,column=0,sticky = "E")
-    kprime_u = Entry(extinctwindow,font=12)
-    kprime_u.grid(row=2,column=1,sticky = "W")
-    
-    Label(extinctwindow, text = "  (Default = 0.6)", font = 12).grid(row = 2, column = 2, sticky = "W")
-    Label(extinctwindow, text = "k'b = ",font = 12).grid(row=3,column=0,sticky = "E")
-    kprime_b = Entry(extinctwindow,font=12)
-    kprime_b.grid(row=3,column=1,sticky = "W")
-    
-    Label(extinctwindow, text = "  (Default = 0.4)", font = 12).grid(row = 3, column = 2, sticky = "W")
-    Label(extinctwindow, text = "k'v = ",font = 12).grid(row=4,column=0,sticky = "E")
-    kprime_v = Entry(extinctwindow,font=12)
-    kprime_v.grid(row=4,column=1,sticky = "W")
-    
-    Label(extinctwindow, text = "  (Default = 0.2)", font = 12).grid(row = 4, column = 2, sticky = "W")
-    Label(extinctwindow, text = "k'r = ",font = 12).grid(row=5,column=0,sticky = "E")
-    kprime_r = Entry(extinctwindow,font=12)
-    kprime_r.grid(row=5,column=1,sticky = "W")        
-    Label(extinctwindow, text = "  (Default = 0.1)", font = 12).grid(row = 5, column = 2, sticky = "W")
-    Label(extinctwindow, text = "k'i = ",font = 12).grid(row=6,column=0,sticky = "E")
-    kprime_i = Entry(extinctwindow,font=12)
-    kprime_i.grid(row=6,column=1,sticky = "W")
-    Label(extinctwindow, text = "  (Default = 0.08)", font = 12).grid(row = 6, column = 2, sticky = "W")
-    Label(extinctwindow, text = " ", font = 12).grid(row=7,column=0)
-    Label(extinctwindow, text = "Enter Second Order Extinction Coefficient for b",font=12).grid(row=8,column=0,columnspan=2, sticky = "W")
-    Label(extinctwindow, text = 'k"b = ',font = 12).grid(row=9,column=0,sticky = "E") 
-    kdblprim_b = Entry(extinctwindow,font=12)
-    kdblprim_b.grid(row=9,column=1,sticky = "W")
-    Label(extinctwindow, text = "  (Default = 0.01)", font = 12).grid(row = 9, column = 2, sticky = "W")
-    Label(extinctwindow, text = " ", font = 12).grid(row=10,column=0)
-    Label(extinctwindow, text = "Enter Location of Observatory", font = 12).grid(row=11,column =0, columnspan=2, sticky = "W")
-    Label(extinctwindow, text = "Latitude (+/- DD.DDD or DD:MM:SS N/S)",font = 12).grid(row=12,column=0,columnspan=2, sticky = "E")
-    obs_lat = Entry(extinctwindow, font = 12)
-    obs_lat.grid(row = 12, column = 2, sticky = "W")
-    Label(extinctwindow, text = "Longitude (+/- DDD.DDD or DD:MM:SS E/W)",font = 12).grid(row = 13, column = 0, columnspan=2, sticky = "E")
-    obs_long = Entry(extinctwindow, font = 12)
-    obs_long.grid(row = 13, column = 2, sticky = "W")
-    Label(extinctwindow, text = "Elevation (meters)", font = 12).grid(row=14,column = 0, columnspan=2, sticky = "E")
-    obs_elev = Entry(extinctwindow,font = 12)
-    obs_elev.grid(row = 14, column = 2, sticky = "W")
-    Label(extinctwindow, text = " ").grid(row = 15)
-    Button(extinctwindow, text = "Save Extinction Values",command = save_extinction,font=12).grid(row=16,column=1)
-    Label(extinctwindow, text = "     ", font = 12).grid(row = 17, column = 3)
-    
-    
-#    raLabel = Label(extinctwindow,text=("RA (HH:MM:SS or DDD.xxx)"),font = 12).grid(row=1,column=0)
-#    raentry = Entry(extinctwindow,font=12)
-#    raentry.grid(row=1,column=1)
-#    decLabel = Label(radecwindow,text=("Dec (+/-DD:MM:SS or DD.xxx)"),font=12).grid(row=2,column=0)
-#    decentry = Entry(radecwindow,font=12)
-#    decentry.grid(row=2,column=1)
-#    Button(radecwindow,text="Enter",command = quitra,font="12").grid(row=3,columnspan=2)print("Extinction Code")
-    return
-
-
-############################################################################################################
-############################################################################################################
-##
-##    Test Transforms Program                                                                             ##
-##                                                                                                        ##
-############################################################################################################
-############################################################################################################
-
-############################################################################################################
-#
-#                   Perform Analysis of Transform Set on Loaded Image
-#
-############################################################################################################
-def analyze_transforms():
-    global allxforms,test_xforms_float,test_xforms_str, test_xforms_err_float, test_xforms_err_str,img_set_filters
-    global status_box, transforms_to_do,teit,num_ref_stars,teit_test_star_auid, num_test_stars,teit_filters
-    global img_set_filters
-    
-#      
-##
-##   CALCULATE TRANSORMED MAGNITUDES
-#  teit format - because of VPHOT erratic star id numbering use B-V to identify standard stars - and allow for later
-#       addition of TEIT_AUID list of  AUID's matching each row in TEIT
-##
-#       first index star id (matches star_id_list)
-#       Second number :
-#       Column 0 -  B-V of reference star
-#       Column 1-(2*cur_filt) - standard star reference mag and error - format U, Uerr, B, Berr, etc.
-#       Column 2*num_filt +1 -> 2*num_filt + 3*cur_filt - machine mag, err, airmass - formt u,uerr,uairmass,b,berr,bairmass etc.
-#
-#   Check that transforms available - if not, remove from planned calculations
-    final_transforms_to_do = []
-    final_transforms_bands = []  # track finals xforms to be done based on both images loaded and transforms provided
-    flen = len(teit_filters)
-    for k in range(len(transforms_to_do)):
-        if test_xforms_str[allxforms.index(transforms_to_do[k])] != "NA": 
-            final_transforms_to_do.append(transforms_to_do[k]) # add
-            if transforms_to_do[k][1:2] not in final_transforms_bands :
-                final_transforms_bands.append(transforms_to_do[k][1:2]) # add to list
-            if transforms_to_do[k][3:4] not in final_transforms_bands :
-                final_transforms_bands.append(transforms_to_do[k][3:4])
-            if transforms_to_do[k][4:5] not in final_transforms_bands :
-                final_transforms_bands.append(transforms_to_do[k][4:5])
-        else:
-            status_box.insert("end","No transforms for " + transforms_to_do[k] + "\n")
-            status_box.see("end")
-
-#
-#   Select Comp Star
-#
-    comp_star_ref_mags = np.zeros((len(teit_filters),2)) # slots for mag, mag erors
-    comp_star_inst_mags = np.zeros((len(teit_filters),2))
-    lowest_error = 100  # set up to count lowest error mag across all filters of images loaded
-    for i in range(num_test_stars):
-        num_filt_w_data = 0
-        avg_error = 0
-        for j in range(5) : # all filters
-            if teit_filters[j].lower() not in final_transforms_bands :  # check if filter in final transform plan
-                continue
-            num_filt_w_data += 1
-            avg_error = ((num_filt_w_data - 1)*avg_error + teit[i,2*j + 2])/num_filt_w_data
-            if avg_error < lowest_error and avg_error != 0 :  # ignore star with bad data
-                lowest_error = avg_error
-                comp_star_id = teit_test_star_auid[i]
-                comp_star_id_index = i
-                for j in range(5):
-                    comp_star_ref_mags[j,0] = teit[i,2*j +1] # comp ref mag
-                    comp_star_ref_mags[j,1] = teit[i,2*j +2] # comp ref error
-                    comp_star_inst_mags[j,0] = teit[i,2*flen + 3*j + 1] # comp instrument mag
-                    comp_star_inst_mags[j,1] = teit[i,2*flen + 3*j + 2] # comp instrument mag error
-    status_box.insert("end","\nComp Star Selected for test field is " + comp_star_id + "\nAverage magnitude error %05.3f" % lowest_error)
-    status_box.insert("end","\nBand\tRef Mag\tErr")
-    for i in range(5):
-        if teit_filters[i].lower() in final_transforms_bands:
-            status_box.insert("end","\n  " + teit_filters[i] + "\t %05.3f \t %05.3f" % (comp_star_ref_mags[i,0], comp_star_ref_mags[i,1]))
-    status_box.insert("end","\n")
-    status_box.see("end")
-    
-#
-#
-#  Butild Transformation Matrix
-#
-#    
-##
-##  xform_matrix - for each star (index 1) and transform done (index 2) - third index = (0)ref mag, (1)ref error, (2)untransformed mag, (3)untransformed mag error,
-##                  (4)untransformed mag minus ref mag, (5)transformed mag, (6)transformed mag error, (7)transformed mag minus ref mag
-##    
-    xform_matrix = np.zeros((num_test_stars,len(final_transforms_to_do),8))
-    status_box.insert("end","\n\n***************************** ANALYSIS RESULTS  *********************************************************************************")
-    status_box.insert("end","\nStar AUID\tBand\tColor\tRefMag\tnot xform\tdel\txform\tdel\tImprov (+yes/-no)")
-    status_box.see("end")
-    xformRef_err = 0
-    xformRef_err_squared = 0
-    no_xformRef_err = 0
-    no_xformRef_err_squared = 0
-    sample_num = 0.0
-    num_improved = 0
-    num_no_change = 0
-    num_worse = 0
-    final_test_star_auids = []
-    for i in range(num_test_stars):  # star id in teit_star_auid[i]
-        for j in range(len(final_transforms_to_do)): # transform_name in transforms_to_do[j]
-            band = final_transforms_to_do[j][1:2]  # will be u,b,v,r,i
-            band_index = teit_filters.index(band.upper())
-            color1 = final_transforms_to_do[j][3:4]
-            color1_index = teit_filters.index(color1.upper())
-            color2 = final_transforms_to_do[j][4:5]
-            color2_index = teit_filters.index(color2.upper())
-            color = color1 + color2
-            band_upper = band.upper()
-# Store target star reference mag and reference mag error
-            xform_matrix[i,j,0] = teit[i,2*teit_filters.index(band_upper) + 1 ] # star i band j reference mag
-            xform_matrix[i,j,1] = teit[i,2*teit_filters.index(band_upper) + 2 ] # star i band j reference mag error
-#  teit format - because of VPHOT erratic star id numbering use B-V to identify standard stars - and allow for later
-#       addition of TEIT_AUID list of  AUID's matching each row in TEIT
-##
-#       first index star id (matches star_id_list)
-#       Second number :
-#       Column 0 -  B-V of reference star
-#       Column 1-(2*cur_filt) - standard star reference mag and error - format U, Uerr, B, Berr, etc.
-#       Column 2*num_filt +1 -> 2*num_filt + 3*cur_filt - machine mag, err, airmass - formt u,uerr,uairmass,b,berr,bairmass etc.
-#
-# check for missing data - skip star
-#
-            if ( teit[i,2*flen + 3*color1_index + 1] == 0 or teit[i,2*flen + 3*color2_index + 1] == 0 ) :
-                continue  # not all measurements available
-            if teit_test_star_auid[i] not in final_test_star_auids:
-                final_test_star_auids.append(teit_test_star_auid[i])
-            xform_matrix[i,j,2] = comp_star_ref_mags[band_index,0] + teit[i,2*flen + 3*band_index + 1] - comp_star_inst_mags[band_index,0] # untransformed mag estimate
-            xform_matrix[i,j,4] = xform_matrix[i,j,2] - xform_matrix[i,j,0] # untransformed minus ref = untransformed error
-            color_transform_name = "T" + color1 + color2
-            print("\nteit[i,2*flen + 3*color1_index + 1],teit[i,2*flen + 3*color2_index + 1],comp_star_inst_mags[color1_index,0],comp_star_inst_mags[color2_index,0]",teit[i,2*flen + 3*color1_index + 1],teit[i,2*flen + 3*color2_index + 1],comp_star_inst_mags[color1_index,0],comp_star_inst_mags[color2_index,0])
-            delta = test_xforms_float[allxforms.index(color_transform_name)]*(
-                    (teit[i,2*flen + 3*color1_index + 1] - teit[i,2*flen + 3*color2_index + 1]) 
-                    - (comp_star_inst_mags[color1_index,0] - comp_star_inst_mags[color2_index,0]))
-            xform_matrix[i,j,5] = xform_matrix[i,j,2] + test_xforms_float[allxforms.index(final_transforms_to_do[j])] * delta # transformed magnitude
-            xform_matrix[i,j,7] = xform_matrix[i,j,5] - xform_matrix[i,j,0] # transformed minus ref = transformed error
-            xform_improvement = abs(xform_matrix[i,j,4]) - abs(xform_matrix[i,j,7]) # positive is improvement, negative worse
-            if xform_improvement > 0:
-                num_improved += 1
-            elif xform_improvement == 0:
-                num_no_change +=1
-            else :
-                num_worse += 1
-                
-            
-            
-            text = "\n%11s\t%2s\t%2s\t%8.3f\t%8.3f\t%8.3f\t%8.3f\t%8.3f\t%6.3f" %(teit_test_star_auid[i],band,color,xform_matrix[i,j,0],xform_matrix[i,j,2],
-                                                                                  xform_matrix[i,j,4],xform_matrix[i,j,5],xform_matrix[i,j,7],xform_improvement)
-            status_box.insert("end",text)
-            xformRef_err = xformRef_err + xform_matrix[i,j,7]
-            xformRef_err_squared = xformRef_err_squared + xform_matrix[i,j,7]**2
-            no_xformRef_err = no_xformRef_err + xform_matrix[i,j,4]
-            no_xformRef_err_squared = no_xformRef_err_squared + xform_matrix[i,j,4]**2
-            sample_num += 1
-    num = xformRef_err/sample_num
-    status_box.insert("end","\n\nWith transforms average error = %05.3f" % num)
-    num = math.sqrt(xformRef_err_squared/sample_num)
-    status_box.insert("end","\nWith transforms error standard deviation = %05.3f" % num)
-    num = no_xformRef_err/sample_num
-    status_box.insert("end","\nWithout transform average error = %05.3f" % num)
-    num = math.sqrt(no_xformRef_err_squared/sample_num)
-    status_box.insert("end","\nWithout transform error standard deviation = %05.3f" % num)
-    status_box.insert("end","\nNumber of stars in test = %d" % len(final_test_star_auids))
-    status_box.insert("end","\n\nNumber of test star measurements with improved accuracy = %d"  % num_improved)
-    status_box.insert("end","\nNumber of test star measurementswith same accuracy = %d" % num_no_change)
-    status_box.insert("end","\nNumber of test star measurements with worse accuracy = %d " % num_worse)
-    status_box.see("end")
-    return
-#
-#  END OF TRANSFORM ANALYSIS
-#
-#
-############################################################################################################    
-# function to load TA Format ini file of transform values
-############################################################################################################
-
-def loadini():
-    global allxforms,test_xforms_float,test_xforms_str, test_xforms_err_float, test_xforms_err_str,translabel
-    global status_box
-# initialize
-
-    inifilename = askopenfilename()
-    xformini = open(inifilename,"r") # open file for reading
-    coef_start = "N"  # keep as No until [Coefficients] line found
-    error_start = "N" # keep as No until [Error] line found
-    for i in range(len(allxforms)) :
-        test_xforms_float[i] = 0
-        test_xforms_str[i] = "NA"
-        test_xforms_err_float[i] = 0
-        test_xforms_err_str[i] = "NA"
-    for line in xformini :
-        delim = ["=","="]
-        aline = []
-        lineparse(line,aline,delim)
-        if coef_start == "N" and error_start == "N" : # before finding coef line
-            if aline[0] != "[Coefficients]" : # look for coefficients line
-                continue # go to next line
-            else: # found coef line
-                coef_start = "Y"
-                continue # read next line
-        if coef_start == "Y" and error_start == "N" : # reading coef lines
-            if aline[0] == "[Error]" :  # Found start of error estimates
-                error_start = "Y"
-                continue # to to next line
-            k = allxforms.index(aline[0])
-            test_xforms_str[k] = aline[1] # save transform string
-            test_xforms_float[k] = float(aline[1])
-        if coef_start == "Y" and error_start == "Y": # reading transform error lines
-            if aline[0] == "[R Squared Values]" : # all transforms and errors have been saved
-                break # don't read any more lines
-            k = allxforms.index(aline[0])
-            test_xforms_err_str[k] = aline[1]
-            test_xforms_err_float[k] = float(aline[1])
-#    for i in range(len(allxforms)) :
-#        print("i,test_xforms_str, test_xforms_float, test_xforms_err_str, test_xforms_err_float = ", i,test_xforms_str[i], test_xforms_float[i], test_xforms_err_str[i], test_xforms_err_float[i])
-    text = "\nTransforms Loaded (transform value, error)"
-    status_box.insert("end",text + "\n")
-    num_coef = 0
-    text = ""
-    for k in range(len(allxforms)):
-        if test_xforms_str[k] == "NA" :
-            continue  # if no value, skip
-        num_coef += 1
-        a = '{:>1s}'.format(allxforms[k])
-        b = '{:05.3f}'.format(test_xforms_float[k])
-        c = '{:05.3f}'.format(test_xforms_err_float[k])
-        text = a + "\t" + b + "\t" + c
-        status_box.insert("end",text + "\n")
-    status_box.see("end")
-    transformtest.lift()
-    
-            
-
-    return
-# function to allow typed entry of transform values
-# 
-# saved entered transforms for use here
-#
-def loadtypedtransforms():
-    global allxforms, status_box,test_xforms_float,test_xforms_str,test_xforms_err_float,test_xforms_err_str,tflabels,tferrlabels,errwindow,loaderr
-    global transformtest,typeintransforms
-# Load values 
-    loaderr = 0
-    try:
-        for i in range(len(allxforms)):
-            test_xforms_str[i] = tflabels[i].get()
-            if test_xforms_str[i] == ("" or "None"):
-                test_xforms_str[i] = "NA"
-            else:
-                test_xforms_float[i] = float(test_xforms_str[i])
-            test_xforms_err_str[i] = tferrlabels[i].get()
-            if test_xforms_err_str[i] == ("" or "None"):
-                test_xforms_err_str[i] = "NA"
-            else:
-                test_xforms_err_float[i] = float(test_xforms_err_str[i])
-    except:
-        Errormsg("Invalid entry - " + allxforms[i])
-        loaderr = 1 # indicate input error
-        root.wait_window(errwindow)
-        return
-    text = "\nTransforms Loaded (transform value, error)"
-    status_box.insert("end",text + "\n")
-    num_coef = 0
-    text = ""
-    for k in range(len(allxforms)):
-        if test_xforms_str[k] == "NA" :
-            continue  # if no value, skip
-        num_coef += 1
-        a = '{:>1s}'.format(allxforms[k])
-        b = '{:05.3f}'.format(test_xforms_float[k])
-        c = '{:05.3f}'.format(test_xforms_err_float[k])
-        text = a + "\t" + b + "\t" + c
-        status_box.insert("end",text + "\n")
-    status_box.see("end")
-    transformtest.lift()
-    typeintransforms.destroy()
-    return
-
-# load transforms from menu for analysis AND create TA ini file of these values
-def loadsave_typedtransforms():
-    global allxforms, status_box,test_xforms_float,test_xforms_str,test_xforms_err_float,test_xforms_err_str,tflabels,tferrlabels,loaderr
-    loadtypedtransforms() # Load typed in values into array
-    if loaderr == 1:
-        return  # let user fix error
-# save transforms to file
-    export_file = asksaveasfile(mode="w",defaultextension = ".ini",
-                                title = "Enter Name to be used for Saved Transforms File")
-    curtime = strftime("%Y_%m_%d_%H:%M:%S",gmtime())
-    avg_xforms_record = "[Setup]\ndescription= TG" + version 
-    avg_xforms_record = avg_xforms_record + "Time created (UT) = "+ curtime + " Saved When User Entered Transforms manually using TG Transform Test Processing\n"
-    avg_xforms_record = avg_xforms_record + "[Coefficients]\n"
-    errorlist = ""
-    for i in range(len(allxforms)): 
-        if test_xforms_str[i] != "NA":
-            avg_xforms_record = avg_xforms_record + allxforms[i] + "=" + test_xforms_str[i] + "\n"
-            errorlist = errorlist + allxforms[i] + "=" + test_xforms_err_str[i] + "\n"
-    avg_xforms_record = avg_xforms_record + "[Error]\n"
-    avg_xforms_record = avg_xforms_record + errorlist
-    export_file.write(avg_xforms_record)
-    export_file.close()
-    fname = export_file.name
-    MessageBox("Transforms Saved at UT\n" + curtime + " to file\n" + fname)    
-    transformtest.lift()
-
-    return
-
-
-def entertransforms():
-    global allxforms, status_box,test_xforms_float,test_xforms_str,test_xforms_err_float,test_xforms_err_str,tflabels,tferrlabels
-    global typeintransforms
-    typeintransforms = Toplevel()
-    typeintransforms.title("Enter Transform Values")
-    w, h = root.winfo_screenwidth(), root.winfo_screenheight()
-    typeintransforms.geometry("%dx%d+0+0" % (.5*w, .8*h))
-    Label(typeintransforms,text="Enter Transform Values\n(Leave uncalculated\ntransforms blank)",font=12).grid(row=0,column=1,columnspan=2)
-    Label(typeintransforms,text="Transform\nValue",font=12).grid(row=1,column=1,padx=2)
-    Label(typeintransforms,text="Transform\nError",font=12).grid(row=1,column=2,padx=2)
-# create field entry labels
-    tflabels, tferrlabels = [],[]
-    for i in range(len(allxforms)):
-        tflabels.append("tf_" + allxforms[i])
-        tferrlabels.append("tf_err" + allxforms[i])
-        Label(typeintransforms,text=allxforms[i],font=12).grid(row=i+2,column=0,pady=2, sticky = "E", padx=1)
-        tflabels[i] = Entry(typeintransforms, width = 8,font=12)
-        tflabels[i].grid(row=i+2,column=1,pady=2)
-        tflabels[i].delete(0,END)  # clear previous text
-        tflabels[i].insert(0,"None")
-        tferrlabels[i] = Entry(typeintransforms, width = 8,font = 12)
-        tferrlabels[i].grid(row=i+2,column=2,pady=2)
-        tferrlabels[i].delete(0,END)
-        tferrlabels[i].insert(0,"None")
-    Button(typeintransforms,text="Use for analysis",command=loadtypedtransforms,font=12).grid(row=len(allxforms)+4,column=1,pady=2,columnspan=2)
-    btn2 = Button(typeintransforms,text="Use for analysis AND\nSave .ini TA Format file",command=loadsave_typedtransforms,font=12)
-    btn2.grid(row=len(allxforms)+5,column=1,pady=2,columnspan=2)
-    return
-
-# function to load VPHOT images of transform test field
-def vphotload():
-    global transformtest,teit,teit_filters,num_filt,status_box, transforms_to_do,num_ref_stars
-    global star_id_list,star_id_list_label,std_field_mags,std_field_star_count,searchfield,sf_col_list # variables for reference star mag retrieval
-    global num_test_stars, teit_test_star_auid,img_set_filters
-    transformtest.lift()
-    fn = askopenfilenames() # get VPHOT files of Standard Field Observation
-    std_field_files = root.tk.splitlist(fn)
-    if len(std_field_files) > 5:
-        Errormsg("Maximum of 5 files")
-        return
-#  teit format - because of VPHOT erratic star id numbering use B-V to identify standard stars - and allow for later
-#       addition of TEIT_AUID list of  AUID's matching each row in TEIT
-##
-#       Column 0 -  B-V of reference star
-#       Column 1-(2*cur_filt) - standard star reference mag and error - format U, Uerr, B, Berr, etc.
-#       Column 2*num_filt +1 -> 2*num_filt + 3*cur_filt - machine mag, err, airmass - formt u,uerr,uairmass,b,berr,bairmass etc.
-###### copy insert to be cleaned up
-    
-    vphot_star_id = []
-    for i in range(500):  # nax number of vphot comps allowed is 500 minus the number of old Boulder ids - added later
-        vphot_star_id.append(" ")    # create array with vphot id's tied to AUID  (star_id_list)
-    vphot_col_list = ["Vphot_Star_id","IM","SNR","X","Y","Sky","Air","B-V","Ref-mag","Target estimate","Active"]
-    srow = -1 # initialize index of last row with valid data in teit
-    img_set_filters = [] #Set filter used list to empty
-    meas_JD = "None"
-    obs_date = []
-    for file_i in range(len(std_field_files)): # process each file listed
-        measurements = open(std_field_files[file_i],mode="r")  # retrieve instrument measurements file
-        starline_found = "N"
-        for oneline in measurements: # process each line in the file
-            if oneline == "\n" or oneline == "\r\n":
-                continue # read next line
-            aline = [] # create holding list for parsed oneline
-            delim = ["\t",":"]  # tab delimeter
-            lineparse(oneline,aline,delim)
-            if starline_found == "N": #process header lines
-                if aline[0][:7] == "Filter":  # find Filter line.
-                    currentfilter = aline[1].lower().strip()
-                    img_set_filters.append(currentfilter) # add filter to list of what has been loaded
-                    continue
-                if aline[0] == "JD":  #Find Julian Date
-                    meas_JD = aline[1].strip()
-                    continue
-                if aline[0] == "Star": # Found line ahead of measurement data - set to process measurement lines
-                    starline_found = "Y"
-                if aline[0] == "Observation date/time":
-                    obs_date.append(aline[1] + ":" + aline[2] + ":" + aline[3] + "-" + currentfilter) # save list of obs times for display and its filter
-                if aline[0] == "Primary target" :
-                    targetname = aline[1]
-                if aline[0] == "R.A." :
-                    ra = aline[1] + ":" + aline[2] +":" + aline[3]
-                    searchra = str(15*(float(aline[1])+float(aline[2])/60+float(aline[3])/3600))[:8]
-                if aline[0] == "Dec." :
-                    dec = aline[1] + ":" + aline[2] + ":" + aline[3]
-                    searchdec = str((abs(float(aline[1]))+float(aline[2])/60+float(aline[3])/3600))[:6]
-                    if "-" in aline[1]:
-                        searchdec = "-" + searchdec
-                continue  # done looking at header lines - most ignored
-#
-# Start processing lines of measurement data following "Star" line
-#
-            else:  # process measurement lines
-                floatbv = float(aline[vphot_col_list.index("B-V")])
-                if srow == -1 : # Set start row to 0 if first table entry
-                    star_row = 0
-                    srow = 1 # set number of stars in table to one for first entry
-                else:
-                    row_found = "N"
-                    for j in range(srow): # search current table for B-V match
-                        if abs((teit[j,0] - floatbv)) < .001 :
-                            star_row = j  # current star row
-                            row_found = "Y"
-                            break
-                    if row_found == "N":
-                        star_row = srow  # add index to new line being added at end of teit table 
-                        srow += 1 # increment number of stars now in table in table
-#
-#  Store data from VPHOT star line into teit star_row
-#  teit format - because of VPHOT erratic star id numbering use B-V to identify standard stars - and allow for later
-#       addition of TEIT_AUID list of  AUID's matching each row in TEIT
-##
-#       Column 0 -  B-V of reference star
-#       Column 1-(2*cur_filt) - standard star reference mag and error - format U, Uerr, B, Berr, etc.
-#       Column 2*num_filt +1 -> 2*num_filt + 3*cur_filt - machine mag, err, airmass - formt u,uerr,uairmass,b,berr,bairmass etc.
-#
-            cur_filt = teit_filters.index(currentfilter.upper())
-# vphot_col_list = ["Vphot_Star_id","IM","SNR","X","Y","Sky","Air","B-V","Ref-mag","Target estimate","Active"]            
-            teit[star_row, 0] = floatbv
-            teit[star_row, 2*cur_filt + 1] = float(aline[vphot_col_list.index("Ref-mag")]) # Reference Mag
-            if aline[vphot_col_list.index("Active")]  == "True" : # ensure good measurement
-                teit[star_row, 2*num_filt + 3*cur_filt + 1] = float(aline[vphot_col_list.index("IM")]) # Instrument Mag
-                teit[star_row, 2*num_filt + 3*cur_filt + 2] = 1/float(aline[vphot_col_list.index("SNR")]) # instrument mag error
-            teit[star_row, 2*num_filt + 3*cur_filt + 3] = float(aline[vphot_col_list.index("Air")]) # star air mass
-#
-#
-#  Match B-V of reference field stars to AUID - store auid and reference star error mags (ref mags from VPHOT file - duplicate)
-#
-    num_test_stars = srow  # number of stars in VPHOT loaded field measured by user
-    searchfield = "ra=" + searchra + "&dec=" + searchdec
-    retrieve_std_mags()  # load standard mag information from AAVSO VSP data base
-# global star_id_list,star_id_list_label,std_field_mags,std_field_star_count,searchfield,sf_col_list    
-#            sf_col_list = ["RA","Dec","U","B","V","R","I"] # list names of each column in std_field_mags array
-
-    for i in range(srow):
-        print("std_field_mags = ",std_field_mags[i,])
-    teit_test_star_auid = []
-    num_ref_stars = std_field_star_count # from standard field retrieval, number of reference stars
-    print("\n\nnum_test_stars,num_ref_stars = ",num_test_stars,num_ref_stars)
-    print("\nSTART AUID MATCH*****************************************")
-    for i in range(num_test_stars): # for each test star in table
-        matchfound = "N"
-#
-#                
-#  look for a stored reference magnitude and make sure it matches value in std_field_mags and a matching ref magnitude - looking out for matching B-V but not correct star
-#                
-        for f in range(len(img_set_filters)) :
-            knownfilter = img_set_filters[f].upper()
-            filter_index = teit_filters.index(knownfilter)
-            for j in range(num_ref_stars):
-                if (abs(teit[i,0] - (std_field_mags[j,sf_col_list.index("B")] - std_field_mags[j,sf_col_list.index("V")])) < .001 ) and (
-                        abs(teit[i,2*filter_index + 1] - std_field_mags[j,sf_col_list.index(knownfilter)]) < .001 ) :   # look for match
-                    for m in range(len(teit_filters)) : # for U,B,V,R,I
-                        teit[i,2*m + 2] = std_field_mags[j,sf_col_list.index(teit_filters[m]) + 5] # store ref star error measures
-                    teit_test_star_auid.append(star_id_list[j]) #  store AUID - fixing VPHOT problem!
-                    print("\ni,j,star_id_list[j] ",i,j,star_id_list[j])
-                    matchfound = "Y"
-                    break # go to next test star
-            if matchfound == "Y":
-                break # go to next test star
-            else:
-                 continue # try next filter
-        if matchfound == "N":
-            teit_test_star_auid.append("NoAUID")
-            Errormsg("AUID match to star not found - 'NoAUID' will be identifier")
-    print("len(teit_test_star_auid= )",len(teit_test_star_auid))
-    
-    for k in range(len(teit_test_star_auid)):
-        print("\n\nk,teit_test_star_auid[k],teit[k,] = ", k, teit_test_star_auid[k],teit[k,])
-    radec = "RA = " + ra + "  Dec = " + dec
-    text = "VPHOT Measurements Loaded for " + targetname + "\n" + radec 
-    status_box.insert("end",text + "\n\n")
-    text = "Image Dates - filters"
-    status_box.insert("end",text + "\n")
-    for i in range(len(obs_date)) :
-        status_box.insert("end",obs_date[i] + "\n")
-    status_box.see("end")
-    transformtest.lift()
-#    
-#  Create list of transforms possible with filters submitted
-#    Use color tranform nomenclature to track
-#
-    transforms_to_do = []
-    if "u" in img_set_filters and "b" in img_set_filters:
-        transforms_to_do.append("Tu_ub")
-        transforms_to_do.append("Tb_ub")
-    if "b" in img_set_filters and "v" in img_set_filters:
-        transforms_to_do.append("Tb_bv")
-        transforms_to_do.append("Tv_bv")
-    if "v" in img_set_filters and "r" in img_set_filters:
-        transforms_to_do.append("Tv_vr")
-        transforms_to_do.append("Tr_vr")
-    if "r" in img_set_filters and "i" in img_set_filters:
-        transforms_to_do.append("Tr_ri")
-        transforms_to_do.append("Ti_ri")
-    if "v" in img_set_filters and "i" in img_set_filters:
-        transforms_to_do.append("Tv_vi")
-        transforms_to_do.append("Ti_vi")
-        if "r" in img_set_filters:
-            transforms_to_do.append("Tr_vi")
-    if len(transforms_to_do) == 0 :
-        Errormsg("Insufficient Filters for Any Analysis - reload images")
-    return
-            
-##############################################################################
-#
-#   Test Transforms Main Program Window Creation
-#
-##############################################################################
-        
-def test_transforms():
-    global transformtest,teit_filters,num_filt,teit,tat,tat_col_ref,test_xforms_float,test_xforms_str,allxforms
-    global test_xforms_err_str, test_xforms_err_float,status_box
-#
-#  Define Major Tables for testing transforms
-#
-#  teit = Transform Evaluation Input Table - numpy array
-    teit_filters = ["U","B","V","R","I"]  # set up to allow easy program additions for other fiters
-    num_filt = len(teit_filters)  # number of filters
-##
-#  teit format - because of VPHOT erratic star id numbering use B-V to identify standard stars - and allow for later
-#       addition of TEIT_AUID list of  AUID's matching each row in TEIT
-##
-#       Column 0 -  B-V of reference star
-#       Column 1-(2*cur_filt) - standard star reference mag and error - format U, Uerr, B, Berr, etc.
-#       Column 2*num_filt +1 -> 2*num_filt + 3*cur_filt - machine mag, err, airmass - formt u,uerr,uairmass,b,berr,bairmass etc.
-#
-# 
-#   tat = Transform Analysis Table
-#
-#       Column 0 - B-V of reference star
-#       Column 1 - xform identifier (Ta_bc) where a is filter and bc color filters
-#       Column 2 - [(0)untransformed mag; (1)untransformed mag error; (2)transformed mag;(3)transformed mag error;
-#                  (4)reference minus untransformed mag;(5)reference minus untransformed mag error;
-#                  (6)reference minus transformed mag; (7)reference minus transformed mag error]
-#
-#    Inirialize
-
-    teit = np.zeros((500,5*num_filt + 1)) # allow up to 500 reference stars - maybe change later to count
-    test_xforms_float = np.zeros(len(allxforms)) # float of transform values in sequence of allxforms
-    test_xforms_str = [] # intialize 
-    test_xforms_err_str = [] #initialize
-    for i in range(len(allxforms)) :
-        test_xforms_str.append("NA")
-        test_xforms_err_str.append("NA")
-    test_xforms_err_float = np.zeros(len(allxforms)) # initialize float of errors
-
-# Create window    
-    
-    transformtest = Toplevel()
-    transformtest.title("Test Transform Sets With Standard Field")
-    w, h = root.winfo_screenwidth(), root.winfo_screenheight()
-    transformtest.geometry("%dx%d+0+0" % (.95*w, .9*h))
-    Label(transformtest, text="Transforms Evaluation Test",font=14).grid(row=0,column=2)
-    Button(transformtest,text="Load VPHOT files of Standard Field \nto use for test - 5 or less files",font=12,command=vphotload,bg="#E0FFFF").grid(row=1,column=0,columnspan=2,sticky = "W")
-    Label(transformtest, text="Load or enter Transform Coefficients: ",font=12).grid(row=2,column=0,pady=5)
-    Button(transformtest,text="Load .ini file\n (TA Format)",font=12,command=loadini,bg="#E0FFFF").grid(row=2,column=1,padx=2,sticky = "E")
-    Button(transformtest,text="Type in transform\n coefficients",font=12,command=entertransforms,bg="#E0FFFF").grid(row=2,column=2,sticky = "W",padx=2)
-    Label(transformtest,text="STATUS INFORMATION", font = 12).grid(row=1,column=4,sticky="W",pady=5,padx=5)
-    status_box = tkst.ScrolledText(transformtest,width=85,height=35,wrap=WORD,font=12)
-    status_box.grid(row=2,column=3,columnspan = 4, rowspan = 10,sticky = "W")
-    bt3=Button(transformtest, text = "Analyze Current Transforms Using Loaded Image",font=12,command=analyze_transforms,bg="#E0FFFF")
-    bt3.grid(row=3,column=0,columnspan=2,sticky = "W", padx = 2)
-    return
 
 
 
@@ -2931,13 +1828,7 @@ def test_transforms():
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-# Main Program functions
-def myfunction(event): 
-    canvas1.configure(scrollregion=canvas1.bbox("all"))
-
-#  Main Program
-
-version = " - Version TG_V6.5"
+version = " - Version 6.6"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
@@ -2953,12 +1844,13 @@ appscrollbarx = Scrollbar(canvas1,orient="horizontal",command=canvas1.xview)
 canvas1.configure(xscrollcommand=appscrollbarx.set)
 appscrollbarx.pack(side=BOTTOM,fill=X)
 canvas1.pack(side=TOP,fill=BOTH,expand=TRUE)
-menubar = Menu(root)
-root.config(menu=menubar)
-menubar.add_command(label="Extinction Settings", command=extinction)
-menubar.add_command(label="Test Transforms", command=test_transforms)
-allxforms = ["Tub","Tu_ub","Tb_ub","Tbv","Tb_bv","Tv_bv","Tvr","Tv_vr","Tr_vr","Tri","Tr_ri","Ti_ri","Tvi","Tv_vi","Ti_vi","Tr_vi"] # set up master xform list
+allxforms = ["Tub","Tu_ub","Tb_ub","Tbv","Tb_bv","Tbr","Tb_br","Tb_bi","Tbi","Tv_bv","Tvr","Tv_vr","Tr_vr","Tri","Tr_ri","Ti_ri","Tvi","Tv_vi","Ti_vi","Tr_vi"] # set up master xform list
 # Set up master close window handler  WINDOWS UNIQUE CODE
+
+def callback():
+    plt.close(1)
+    root.destroy()
+root.protocol("WM_DELETE_WINDOW", callback)
 #
 # Define general constants
 #
@@ -3130,7 +2022,7 @@ fmt3name = "VPHOT - Enter Min VPhot SNR"
 line_fmt = 3
 col_fmt = 2
 fmt_name = StringVar()
-fmt_name.set("VPHOT")
+fmt_name.set(fmt1name)
 # TwoRadioButton(app,format_tag,fmt1name,fmt2name,line_fmt,col_fmt,fmt_name)
 Radiobutton(app,text=fmt1name,variable=fmt_name,value=fmt1name,font=12).grid(row=line_fmt,column=col_fmt,pady=5,padx=2)
 Radiobutton(app,text=fmt2name,variable=fmt_name,value=fmt2name,font=12).grid(row=line_fmt,column=col_fmt+1,pady=5)
@@ -3156,31 +2048,21 @@ Label(app,text=("---------" * 20)).grid(row=7,column=0,columnspan=8)
 caltransformsbutton = Button(app,text="Calculate Transform Set")
 caltransformsbutton.configure(command = calculatetransforms,state = "disabled",font=12)
 caltransformsbutton.grid(row=8,column=0,columnspan=2,padx=20,pady=10)
-extinction_setting = StringVar()
-extinction_setting.set("N")
-Label(app,text = "Extinction", font =10).grid(row=9,column=2)
-Radiobutton(app,text= "On", value = "Y",font=10, variable = extinction_setting).grid(row=8,column=2,sticky=W)
-Radiobutton(app, text= "Off", value = "N", font =10, variable = extinction_setting).grid(row=8,column=2,sticky=E)
-
 
 # Create Button to save transforms - disabled
 save_xform_button = Button(app,text="Save Transform Set")
 save_xform_button.configure(state = "disabled", command = savetransforms,font=12)
-save_xform_button.grid(row=8,column=4,padx=20)
+save_xform_button.grid(row=8,column=2,padx=20)
 
 # Create button to merge results of different observations
 merge_obs_sets_button = Button(app,text="Review / Average\n Transform Sets")
 merge_obs_sets_button.configure(command = mergesets,state = "disabled",font=12)
-merge_obs_sets_button.grid(row=8,column=5)
+merge_obs_sets_button.grid(row=8,column=3)
 
 # Create button to delete of transform sets
 delete_obs_sets_button = Button(app,text="Delete Old \nTransform Sets")
 delete_obs_sets_button.configure(command = deletesets,state = "disabled",font=12)
-delete_obs_sets_button.grid(row=8,column=6)
-# size window
-w, h = root.winfo_screenwidth(), root.winfo_screenheight()
-# use the next line if you also want to get rid of the titlebar
-root.geometry("%dx%d+0+0" % (.9*w, .7*h))
+delete_obs_sets_button.grid(row=8,column=4)
 root.mainloop()
 
 
