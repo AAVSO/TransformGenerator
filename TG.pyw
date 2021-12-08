@@ -1,5 +1,5 @@
 #
-#   TG VERSION 6.6
+#   TG VERSION 6.8
 #
 import matplotlib
 matplotlib.use('TkAgg')
@@ -19,13 +19,20 @@ import sys
 import numpy as np
 from scipy import stats
 import matplotlib.pyplot as plt
+from matplotlib.pyplot import figure
 from time import gmtime,strftime,time
 import time
 import pickle
-try:
-    from urllib2 import urlopen
-except ImportError:
-    from urllib.request import urlopen
+#try:
+#    from urllib2 import Request,urlopen
+#    from urllib2.error import URLError
+#except ImportError:
+#    from urllib.request import Request, urlopen
+#    from urllib.error import URLError
+import ssl
+import urllib.request
+from urllib.request import urlopen
+
 from pylab import get_current_fig_manager
 import json
 from decimal import *
@@ -38,7 +45,11 @@ from decimal import *
 #       coefficients described in Henden - "Astronomical Photometry" and                    #
 #       Bruce Gary's "CCD TRANSFORMATION EQUATIONS FOR USE WITH SINGLE IMAGE                #
 #       (DIFFERENTIAL) PHOTOMETRY".
-#
+#      Version 6.8 (no release version 6.7)
+#              Remove security test for AAVSO website
+#              Expand window to display saved transform sets
+#              Updated pickradius to new standard
+#              Increase figsize of plots
 #
 #      Version 6.6 (no version 6.5 created)
 #              Add support for additional transform coefficients for Lesve (Tbr,Tbi,Tb_br,Tb_bi)
@@ -50,7 +61,7 @@ from decimal import *
 #      Version 6.3
 #              Add Melotte 111 field support
 #              Add code to import and work on both Python 3.x and 2.7 
-#      Version 6.0  
+#      Version 6.#0  
 #              Rename of Veresion 5.12 beta for release
 #      Version 5.12 beta
 #                  Correct bright star VSP label issue with underscore xx_
@@ -308,11 +319,20 @@ def calculatetransforms():
             ##################################################################################
 ############
 ##              NEW VSP API CODE TO RETIEVE STANDARD REFERENCE MAGNITUDES
-#
+#a
             try:
-                f = urlopen('https://www.aavso.org/apps/vsp/api/chart/?'+ searchfield +'&fov=210&maglimit=16.5&special=std_field&format=json')
-
-            except:
+               
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                f = urlopen('https://app.aavso.org/vsp/api/chart/?'+ searchfield +'&fov=210&maglimit=16.5&special=std_field&format=json',context=ctx)
+                
+                
+            except urllib.error.URLError as e:
+                print("TG error information")
+                print("Line of code causing error - f = urlopen('https://app.aavso.org/vsp/api/chart/?'+ searchfield +'&fov=210&maglimit=16.5&special=std_field&format=json'")
+                print("error information = ",e),
+                print("searchfield = " + searchfield)
                 Errormsg("Could Not Access AAVSO Web Site")
                 return
             chart_data = json.load(f)   # chart_data is a python dictionary
@@ -1017,9 +1037,11 @@ def line_pick(event):
     selected_star_textlab = "  "  # No message to display on first call
     xends_sigma_orig = np.zeros(2)  # set up to track original 3 sigma lines on plot
     yends_sigma_orig = np.zeros(2)
+    figure(figsize=(7,7),dpi=120)
     fig1 = plt.figure(1)  # start figure 1
+   
 ##
-##  Add test code to raise window to front
+##  Add test code to raise window to fron
 ##
     fig1.canvas.manager.window.attributes('-topmost',1) # place window on top
     fig1.canvas.manager.window.attributes('-topmost',0) # allow later windows on top
@@ -1571,6 +1593,7 @@ def getlist():
                 dummy = 0  # only so remove process will work - not actually used
                 Obs_Set_Columns(root2,(table_start_row+1),(i+4),dummy)
         avg_selected_observations = Button(root2,text = "Compute Average of Checked Transform Sets",command = avg_sets,font=10,bg="#E0FFFF").grid(row=27,column=4,columnspan=10)
+        Label(root2, text = " ").grid(row=29,column=4)
     else:
         message = "Reduce to %3.0f or less selections" % max_selected_sets
         Errormsg(message)
@@ -1828,7 +1851,7 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 6.6"
+version = " - Version 6.8"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
