@@ -1,5 +1,5 @@
 #
-#   TG VERSION 6.8
+#   TG VERSION 6.9
 #
 import matplotlib
 matplotlib.use('TkAgg')
@@ -45,6 +45,9 @@ from decimal import *
 #       coefficients described in Henden - "Astronomical Photometry" and                    #
 #       Bruce Gary's "CCD TRANSFORMATION EQUATIONS FOR USE WITH SINGLE IMAGE                #
 #       (DIFFERENTIAL) PHOTOMETRY".
+#
+#      Version 6.9
+#              add single filter photometry creation of Tv_bv
 #      Version 6.8 (no release version 6.7)
 #              Remove security test for AAVSO website
 #              Expand window to display saved transform sets
@@ -243,7 +246,8 @@ def calculatetransforms():
                     return
 #  Use selected format to decide how to search for RA/Dec
                 if fmt_name.get() == "VPHOT":  # check if instrument magnitudes are in VPHOT
-# Process one VPHOT file to find RA/DEC                    
+# Process one VPHOT file to find RA/DEC  
+  
                     for oneline in measurements: # process each line in the file
 #                        print("oneline in measurements - ",oneline)
                         if oneline == "\n" or oneline == "\r\n":
@@ -325,7 +329,7 @@ def calculatetransforms():
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
                 ctx.verify_mode = ssl.CERT_NONE
-                f = urlopen('https://app.aavso.org/vsp/api/chart/?'+ searchfield +'&fov=210&maglimit=16.5&special=std_field&format=json',context=ctx)
+                f = urlopen('https://app.aavso.org/vsp/api/chart/?'+ searchfield +'&fov=179&maglimit=16.5&special=std_field&format=json',context=ctx)
                 
                 
             except urllib.error.URLError as e:
@@ -644,9 +648,10 @@ def calculatetransforms():
 ################################################################################################################
                 
             elif fmt_name.get() == "VPHOT":
-                if len(file_namelist) < 2 :
-                    Errormsg("Need at least two filters data to create transforms")
-                    return
+#                if len(file_namelist) < 2 :  CODE REMOVED TO ALLOW SINGLE FILTER TRANSFORMS
+#
+#                   Errormsg("Need at least two filters data to create transforms")
+#                    return
 # Read and process first VPHOT file
                 snr_limit = float(vphot_snr.get())
                 vphot_filt_list = []
@@ -661,10 +666,12 @@ def calculatetransforms():
                 mmm_data_started = "N"                
                 for file_i in range(len(file_namelist)): # process each file listed
                     measurements = open(file_namelist[file_i],mode="r")  # retrieve instrument measurements file
+  #                  print('measurements line 669 V6.9 =',measurements)
+                    
                     starline_found = "N"
                     activestars = 0 # set to count active stars to ensure some found 
                     for oneline in measurements: # process each line in the file
-#                        print("oneline in measurements - ",oneline)
+ #                       print("oneline in measurements - ",oneline)
                         if oneline == "\n" or oneline == "\r\n":
                             continue # read next line
                         aline = [] # create holding list for parsed oneline
@@ -724,14 +731,13 @@ def calculatetransforms():
                                         star_id_not_matched_list = star_id_not_matched_list + one_msg_line + "\n"  # add line to error message
                                         one_msg_line = ""
                                 continue # no match - go to next measurement file input line
-                            
+ #                           print("V6.9 line 734 ref_star_id_line_label_match_index is ",ref_star_id_line_label_match_index)
     # Search VSP data with same label to find matching star magnitude and B-V # sf_col_list = ["RA","Dec","U","B","V","R","I"] # list names of each column in std_field_mags array  ;
                             for j in range(ref_star_id_line_label_match_index,ref_star_id_line_label_match_index + 20):
                                 if abs(float(aline[vphot_col_list.index("Ref-mag")]) - std_field_mags[j,sf_col_list.index(currentfilter.upper())]) < .001 and \
                                    abs(float(aline[vphot_col_list.index("B-V")]) - ((std_field_mags[j,sf_col_list.index("B")] - std_field_mags[j,sf_col_list.index("V")]))) < .001:
                                      vphot_AUID_index = j
                                      vphot_star_id[j] = aline[vphot_col_list.index("Vphot_Star_id")] # save VPHOT Star id
-                                     
                                      
 #
 #               AUID of VPHOT measurment known, save measurement in measured_machine_mags array - find out if found before and set measurement row number
@@ -761,7 +767,6 @@ def calculatetransforms():
                                          aline[vphot_col_list.index("SNR")] = temp[:blank_at] + temp[blank_at + 1:len(temp)]
                                                                                        
                                      if aline[vphot_col_list.index("Active")] == "True" and float(aline[vphot_col_list.index("SNR")]) > snr_limit: # check for invalid measurement
-                                         
                                          activestars += 1 # count VPhot active stars matched
                                          measured_machine_mags[k,mmm_col_lst.index(currentfilter.lower())] = (mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)]* \
                                                                                                       measured_machine_mags[k,mmm_col_lst.index(currentfilter)] + \
@@ -868,6 +873,8 @@ def calculatetransforms():
                        "Tr_vr","V-R","R-r","N","Tr_ri","R-I","R-r","N",
                        "Ti_ri","R-I","I-i","N","Tvi","V-I","v-i","Y","Tv_vi","V-I","V-v","N","Ti_vi","V-I","I-i","N",
                        "Tr_vi","V-I","R-r","N"]
+            
+            
                         
                         
 # Create master array 'transform_raw_data' indexed by transform name index, star id number, and x values, y values,and indicator if star is use for transform calculation (1=Y,0=N)
@@ -904,8 +911,18 @@ def calculatetransforms():
             if b_ind ==1 and i_ind == 1:
                 transform_names.append("Tbi")
                 transform_names.append("Tb_bi")
-                
-                    
+################################################
+# add ability to calculate Tv_bv etc. for single filter transforms
+            filters_submitted = [b_ind,v_ind,r_ind,i_ind]
+            single_filter_transforms = ["Tb_bv","Tv_bv","Tr_vi","Ti_vi"]
+            num_submitted = 0
+            for counter in range(len(filters_submitted)): # count number of filters with data submitted
+                if filters_submitted[counter] == 1:
+                    indexnum = counter
+                    num_submitted += 1
+            if num_submitted == 1: # only one filter data submitted - for single filter transforms
+                transform_names.append(single_filter_transforms[indexnum])
+################################################
             
             if len(transform_names) == 0 :  # check that some transform values can be calculated
                 Errormsg("No standard transforms can be computed with filters submitted")
@@ -1811,7 +1828,7 @@ def avg_sets():
 
 # Add Button to allow saving of average transforms
     save_xforms_btn = Button(root2,text = "Save File of Average Transforms\nEnter/Select File Name\n",command = export_transforms,font=10,bg="#E0FFFF").grid(row=28,column=4,columnspan=10)
-
+    Label(root2, text = " -----------------------\n").grid(row=30)
 ################################################################################
 #                                                                              #
 #    Create Export File of Averaged Transforms                                 #
@@ -1851,7 +1868,7 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 6.8"
+version = " - Version 6.9"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
