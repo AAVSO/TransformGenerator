@@ -648,6 +648,7 @@ def calculatetransforms():
 ################################################################################################################
                 
             elif fmt_name.get() == "VPHOT":
+#                print("star_id_list_label,star_id_list",star_id_list_label,star_id_list)
 #                if len(file_namelist) < 2 :  CODE REMOVED TO ALLOW SINGLE FILTER TRANSFORMS
 #
 #                   Errormsg("Need at least two filters data to create transforms")
@@ -712,74 +713,78 @@ def calculatetransforms():
                                 
                             
                             continue  # done looking at header lines - most ignored
-#
+#p
 # Start processing lines of measurement data following "Star" line
 #
-                        else:  # process measurement lines
+                        else:
+                            # process measurement lines - separate logic for AUID vs VPhot id
+ #                           print("starts Star line process - aline",aline)
+                            if(aline[0][:4] == "000-") :  # process AUID
+                                j = star_id_list.index(aline[0])
+                                vphot_AUID_index = j
+                                vphot_star_id[j] = aline[0]
+                            else: # process VPhot ids
                             
-                            label = aline[0][:3] # get first 3 numbers of vphot_star_id - should match VSP label - also works for two digit star_id
-                            if label[-1:] == "_": #remove underscore if two digit star id 
-                                label = label[:-1]
-                            try:
-                                
-                                ref_star_id_line_label_match_index = star_id_list_label.index(label)
-                                
-                            except:
-                                if (aline[0][3:4] == "-" and aline[0][7:8] == "-") or aline[0].isdigit(): # check for valid star id
-                                    one_msg_line = one_msg_line + aline[0] + ", " # add id to list of names
-                                    if len(one_msg_line) > 30:
-                                        star_id_not_matched_list = star_id_not_matched_list + one_msg_line + "\n"  # add line to error message
-                                        one_msg_line = ""
-                                continue # no match - go to next measurement file input line
- #                           print("V6.9 line 734 ref_star_id_line_label_match_index is ",ref_star_id_line_label_match_index)
-    # Search VSP data with same label to find matching star magnitude and B-V # sf_col_list = ["RA","Dec","U","B","V","R","I"] # list names of each column in std_field_mags array  ;
-                            for j in range(ref_star_id_line_label_match_index,ref_star_id_line_label_match_index + 20):
-                                if abs(float(aline[vphot_col_list.index("Ref-mag")]) - std_field_mags[j,sf_col_list.index(currentfilter.upper())]) < .001 and \
-                                   abs(float(aline[vphot_col_list.index("B-V")]) - ((std_field_mags[j,sf_col_list.index("B")] - std_field_mags[j,sf_col_list.index("V")]))) < .001:
-                                     vphot_AUID_index = j
-                                     vphot_star_id[j] = aline[vphot_col_list.index("Vphot_Star_id")] # save VPHOT Star id
+                                label = aline[0][:3] # get first 3 numbers of vphot_star_id - should match VSP label - also works for two digit star_id
+                                if label[-1:] == "_": #remove underscore if two digit star id 
+                                    label = label[:-1]
+                                try:
+                                    
+                                    ref_star_id_line_label_match_index = star_id_list_label.index(label)
+                                    
+                                except:
+                                    if (aline[0][3:4] == "-" and aline[0][7:8] == "-") or aline[0].isdigit(): # check for valid star id
+                                        one_msg_line = one_msg_line + aline[0] + ", " # add id to list of names
+                                        if len(one_msg_line) > 30:
+                                            star_id_not_matched_list = star_id_not_matched_list + one_msg_line + "\n"  # add line to error message
+                                            one_msg_line = ""
+                                    continue # no match - go to next measurement file input line
+     #                           print("V6.9 line 734 ref_star_id_line_label_match_index is ",ref_star_id_line_label_match_index)
+        # Search VSP data with same label to find matching star magnitude and B-V # sf_col_list = ["RA","Dec","U","B","V","R","I"] # list names of each column in std_field_mags array  ;
+                                for j in range(ref_star_id_line_label_match_index,ref_star_id_line_label_match_index + 20):
+                                    if abs(float(aline[vphot_col_list.index("Ref-mag")]) - std_field_mags[j,sf_col_list.index(currentfilter.upper())]) < .001 and \
+                                       abs(float(aline[vphot_col_list.index("B-V")]) - ((std_field_mags[j,sf_col_list.index("B")] - std_field_mags[j,sf_col_list.index("V")]))) < .001:
+                                         vphot_AUID_index = j
+                                         vphot_star_id[j] = aline[vphot_col_list.index("Vphot_Star_id")] # save VPHOT Star id
                                      
 #
 #               AUID of VPHOT measurment known, save measurement in measured_machine_mags array - find out if found before and set measurement row number
-                                     if mmm_data_started == "Y": # any data yet stored 
-                                         
-                                         
-                                         for m in range(srow + 1): # search if vphot_AUID_index already stored
-                                             if vphot_AUID_index == measured_machine_mags[m,mmm_col_lst.index("Star_id_index")]: # if match, set instrument row number
-                                                 break
-                                         k = m  # set k to store data in matching row, but...
-                                         
-                                         if (m == srow and vphot_AUID_index != measured_machine_mags[srow,mmm_col_lst.index("Star_id_index")]): # if last entry also not match, start new row
-                                             srow = srow +1 # add new measurement row - srow is size of array data
-                                             k = srow # target new row to store data
-                                             
-                                     else:
-                                         k = 0  # if no entries, make this the first
-                                         mmm_data_started = "Y"
-                                         
-                                             
-                                       
-                                     measured_machine_mags[k,mmm_col_lst.index("Star_id_index")] = vphot_AUID_index # add new id
-                                     mmm_obs_count[k,mmm_obs_count_col_list.index("Star_id_index")] = vphot_AUID_index
-                                     temp = aline[vphot_col_list.index("SNR")]
-                                     if temp.isdigit() is False: # watch out for VPHOT blank in place of comma...
-                                         blank_at = temp.find(" ")
-                                         aline[vphot_col_list.index("SNR")] = temp[:blank_at] + temp[blank_at + 1:len(temp)]
-                                                                                       
-                                     if aline[vphot_col_list.index("Active")] == "True" and float(aline[vphot_col_list.index("SNR")]) > snr_limit: # check for invalid measurement
-                                         activestars += 1 # count VPhot active stars matched
-                                         measured_machine_mags[k,mmm_col_lst.index(currentfilter.lower())] = (mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)]* \
-                                                                                                      measured_machine_mags[k,mmm_col_lst.index(currentfilter)] + \
-                                                                                                      float(aline[vphot_col_list.index("IM")]))/   \
-                                                                                                      (mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)] + 1)
-                                         
-                                         mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)] += 1 # add one to count of observations for this filter
-                                     else:
-                                         if mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)] == 0: # if no valid data for this filter, indicate bad data found
-                                             measured_machine_mags[k,mmm_col_lst.index(currentfilter.lower())] = -1000 # set bad data indicator
-                                     break # found match - go to next line
+                            if mmm_data_started == "Y": # any data yet stored 
                                 
-                                continue # search next standard line to find match
+                                
+                                for m in range(srow + 1): # search if vphot_AUID_index already stored
+                                    if vphot_AUID_index == measured_machine_mags[m,mmm_col_lst.index("Star_id_index")]: # if match, set instrument row number
+                                        break
+                                k = m  # set k to store data in matching row, but...
+                                
+                                if (m == srow and vphot_AUID_index != measured_machine_mags[srow,mmm_col_lst.index("Star_id_index")]): # if last entry also not match, start new row
+                                    srow = srow +1 # add new measurement row - srow is size of array data
+                                    k = srow # target new row to store data
+                                    
+                            else:
+                                k = 0  # if no entries, make this the first
+                                mmm_data_started = "Y"
+                                
+                                    
+                              
+                            measured_machine_mags[k,mmm_col_lst.index("Star_id_index")] = vphot_AUID_index # add new id
+                            mmm_obs_count[k,mmm_obs_count_col_list.index("Star_id_index")] = vphot_AUID_index
+                            temp = aline[vphot_col_list.index("SNR")]
+                            if temp.isdigit() is False: # watch out for VPHOT blank in place of comma...
+                                blank_at = temp.find(" ")
+                                aline[vphot_col_list.index("SNR")] = temp[:blank_at] + temp[blank_at + 1:len(temp)]
+                                                                              
+                            if aline[vphot_col_list.index("Active")] == "True" and float(aline[vphot_col_list.index("SNR")]) > snr_limit: # check for invalid measurement
+                                activestars += 1 # count VPhot active stars matched
+                                measured_machine_mags[k,mmm_col_lst.index(currentfilter.lower())] = (mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)]* \
+                                                                                             measured_machine_mags[k,mmm_col_lst.index(currentfilter)] + \
+                                                                                             float(aline[vphot_col_list.index("IM")]))/   \
+                                                                                             (mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)] + 1)
+                                
+                                mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)] += 1 # add one to count of observations for this filter
+                            else:
+                                if mmm_obs_count[k,mmm_obs_count_col_list.index(currentfilter)] == 0: # if no valid data for this filter, indicate bad data found
+                                    measured_machine_mags[k,mmm_col_lst.index(currentfilter.lower())] = -1000 # set bad data indicator
                                 
                 
                 if star_id_not_matched_list != "":
@@ -955,7 +960,7 @@ def calculatetransforms():
             txtboxlab = []  # tuple for names of text boxes
             i = 0
             for line in transform_names:
-                txtboxlab.append(Text(app,width=40,height=1))
+                txtboxlab.append(Text(app,width=40,height=1,insertontime=0))
                 temphold = " =  %6.3f err = %4.3f r^2 = %3.2f" % (transform_val[transform_names.index(line)],
                                                                   transform_val_err[transform_names.index(line)],transform_val_r2[transform_names.index(line)])
                 line_text = line.ljust(7) + temphold
@@ -1868,7 +1873,7 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 6.9"
+version = " - Version 6.9a"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
