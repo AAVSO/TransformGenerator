@@ -1,5 +1,5 @@
 #
-#   TG VERSION 6.9
+#   TG VERSION 6.9b
 #
 import matplotlib
 matplotlib.use('TkAgg')
@@ -460,13 +460,13 @@ def calculatetransforms():
                             if tcol == "u":
                                 ucol.append(j) # add column number to list - allows multiple values for same filter
                                 u_ind = 1 # indicate u filter images taken
-                            elif tcol == "b":
+                            elif tcol == "b" or tcol == "tb":
                                 bcol.append(j)
                                 b_ind = 1 # indicate b filter images taken
-                            elif tcol == "v":
+                            elif tcol == "v" or tcol == "tg":
                                 vcol.append(j)
                                 v_ind = 1
-                            elif tcol == "r":
+                            elif tcol == "r" or tcol == "tr":
                                 rcol.append(j)
                                 r_ind = 1
                             elif tcol == "i":
@@ -1246,6 +1246,11 @@ def calculate_plot_transform():
     ymin, ymax = plt.ylim()
     delx = xmax-xmin
     dely = ymax-ymin    
+    if(dely<0.5): # if mag transform, expand y scale
+        yctr= (ymin+ymax)/2
+        plt.ylim((yctr-4*dely,yctr+4*dely))  
+        ymin, ymax = plt.ylim()
+        dely = ymax-ymin    
     transform_label = ax.text(.05*(xmax-xmin)+xmin,.95*(ymax-ymin)+ymin,textlab)
     change_star_id_msg = ax.text(xmin+.01*delx,ymin+.01*dely,selected_star_textlab) # Display new star selected message
     ymsg = .05*dely + ymin
@@ -1873,7 +1878,7 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 6.9a"
+version = " - Version 6.9b"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
