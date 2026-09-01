@@ -1,5 +1,5 @@
 #
-#   TG VERSION 6.10
+#   TG VERSION 6.10b
 #
 import matplotlib
 matplotlib.use('TkAgg')
@@ -46,6 +46,7 @@ from decimal import *
 #       Bruce Gary's "CCD TRANSFORMATION EQUATIONS FOR USE WITH SINGLE IMAGE                #
 #       (DIFFERENTIAL) PHOTOMETRY".
 #
+#      Version 6.10b  includes 6.9b
 #      Version 6.10  
 #              Fix for MaxIM File with blank link 
 #      Version 6.9b: better mag coeff graph, accept DSLR filters
@@ -1869,7 +1870,7 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 6.10"
+version = " - Version 6.10b"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
