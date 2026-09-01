@@ -1,5 +1,5 @@
 #
-#   TG VERSION 6.9b
+#   TG VERSION 6.10
 #
 import matplotlib
 matplotlib.use('TkAgg')
@@ -46,6 +46,9 @@ from decimal import *
 #       Bruce Gary's "CCD TRANSFORMATION EQUATIONS FOR USE WITH SINGLE IMAGE                #
 #       (DIFFERENTIAL) PHOTOMETRY".
 #
+#      Version 6.10  
+#              Fix for MaxIM File with blank link 
+#      Version 6.9b: better mag coeff graph, accept DSLR filters
 #      Version 6.9
 #              add single filter photometry creation of Tv_bv
 #      Version 6.8 (no release version 6.7)
@@ -53,11 +56,9 @@ from decimal import *
 #              Expand window to display saved transform sets
 #              Updated pickradius to new standard
 #              Increase figsize of plots
-#
 #      Version 6.6 (no version 6.5 created)
 #              Add support for additional transform coefficients for Lesve (Tbr,Tbi,Tb_br,Tb_bi)
 #              Add new VPhot format option (new Max column) 
-#      
 #      Versionn 6.4
 #              Add support for Landolt field
 #              Fix delete transform sets (Mac issue)
@@ -124,37 +125,27 @@ from decimal import *
 #
 #      Version 4.7 beta-a
 #                  Add SNR threshold on which comps to use
-#
 #      Version 4.7 beta
 #                 add error message for star id's in instrument file not in standards
 #                 add VPHOT interface
-#
 #      Version 4.6
 #                 Retrieve standard reference stars from VSP
-#
 #      Version 4.5 
 #                 Add Maxim input format for instrument magnitudes
-#
 #      Version 4.4
 #                 change max number of star instrument measurement lines from 100 to 300
 #                 allow 300 reference stars
 #                 allow 300 star measurements
 #                 allow star ids to be text 
-#
-#
 #      Version 4.3
 #                 change export transform file format to ini file for TA input
-#
 #      Version 4.2
 #                 add transform error and r^2 values
 #                 change export file to .ini file matching TA input requirements
 #                 allow mulitple values for each filter on star instrument measurement lines
-#                 
-#
 #      Version 4.1
 #                 fix allowing no delimiter at end of Filt line
 #                 change transform nominclature to AAVSO standard
-#                 
 #      Version 4.0
 #                add V-I transforms
 #      Version 3.8 - save computed averages to config_data file also - for future use
@@ -162,22 +153,15 @@ from decimal import *
 #                     clears transform values when new file selected
 #                     fix to file name overlay bug
 #                     add standards field name to display of observation sets
-#
 #      Version 3.7 
 #               turn interactive matplotlib OFF - (on Mac, default is on...)
 #               Add export of averaged transforms
-#
-#
 #      Version 3.6
 #               Clearing plot on each select, changing color of previous line
-#
-#
-#      Version 3.5 eliminated multiple select_lines texts
-#
-#
+#      Version 3.5 
+            eliminated multiple select_lines texts
 #      Version 3.4 April 4, 2014
 #                modified structure to remove recursion problem and incorporate draw()      #
-#
 #       Version 3.3 April 3, 2014
 #                   Changes : Plot mods to work on MAC
 #             Version 3.2  April 2, 2014                                                          #
@@ -280,7 +264,6 @@ def calculatetransforms():
                     ra_dec_entry_window() # Display Window to obtain RA/Dec from user
                     root.wait_window(radecwindow)
                     searchfield = enteredfield  #  use values entered by user
-                    print("searchfield ",searchfield)
                 else:
                     searchfield = "ra=" + searchra + "&dec=" + searchdec  # use values from instrument files
 #  Change "Landolt Field" standard field name to more specific value
@@ -586,6 +569,9 @@ def calculatetransforms():
                 filter_allowed = ["u", "b", "v", "r", "i"] # for indexing the above line count 
                 for oneline in measurements:  # Process each line in file
                     line_num = line_num + 1
+                    if(len(oneline) < 10):  # if blank or excel commas and no data, go to next line
+                        continue
+
                     aline = [] # create holding list for parsed oneline
                     delim = [";",","]  # allow two delimeters
                     lineparse(oneline,aline,delim)
@@ -601,6 +587,8 @@ def calculatetransforms():
                                 if aline[i][-33:] == ": Instrument Magnitude (Centroid)":
                                     col_with_im.append(i)
                                     col_star_id.append(aline[i][:-33].strip())
+                            
+                            
                     else: # Process lines after line 1 - all assumed to be measurement lines
                         meas_JD = aline[0] # use time measurement for display of times for transform - assumes images taken close to same time
                         temp = aline[1].strip() # identify filter used in line
@@ -611,7 +599,7 @@ def calculatetransforms():
                             try:
                                 measured_machine_mags[k,0] = star_id_list.index(col_star_id[j]) #store star id index
                                 measured_machine_mags[k,mmm_col_lst.index(temp)] = (measured_machine_mags[k,mmm_col_lst.index(temp)]*(filter_image_count[filter_allowed.index(temp)] - 1) + float(aline[col_with_im[j]]))/ filter_image_count[filter_allowed.index(temp)] # average in latest measurement and store filter instrument magnnitude
-                                k = k +1  # bump index for next star                                )
+                                k = k +1  # bump index for next star
                             except:  # Get here for non star id matched columns -
                                 
                                 if len(star_id_not_matched_list) == 0:
@@ -639,7 +627,7 @@ def calculatetransforms():
                     r_ind = 1  # indicate r filter data
                 if filter_image_count[filter_allowed.index("i")] > 0:
                     i_ind = 1  # indicate i filter data
-                num_meas_stars = k-1
+                num_meas_stars = k
 
 ################################################################################################################
 #
@@ -1666,7 +1654,10 @@ def quitra():
             aline = [] # create holding list for parsed oneline
             delim = [":",":"]  # colon delimeter
             lineparse(decinput,aline,delim)
-            searchdec = str(np.sign(float(aline[0]))*(abs(float(aline[0]))+float(aline[1])/60+float(aline[2])/3600))[:7]
+            sign = ""
+            if float(aline[0])< 0:
+                sign = "-"
+            searchdec = sign + str(abs(float(aline[0])) +float(aline[1])/60+float(aline[2])/3600)[:7]           
         else: # assume DDD.xxx format
             searchdec = decinput
     except:
@@ -1878,7 +1869,7 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 6.9b"
+version = " - Version 6.10"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
