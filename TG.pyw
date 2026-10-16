@@ -1,5 +1,5 @@
 #
-#   TG VERSION 6.10b
+#   TG VERSION 6.11
 #
 import matplotlib
 matplotlib.use('TkAgg')
@@ -46,6 +46,7 @@ from decimal import *
 #       Bruce Gary's "CCD TRANSFORMATION EQUATIONS FOR USE WITH SINGLE IMAGE                #
 #       (DIFFERENTIAL) PHOTOMETRY".
 #
+#      Version 6.11  renaming of 6.10b
 #      Version 6.10b  includes 6.9b
 #      Version 6.10  
 #              Fix for MaxIM File with blank link 
@@ -160,7 +161,7 @@ from decimal import *
 #      Version 3.6
 #               Clearing plot on each select, changing color of previous line
 #      Version 3.5 
-            eliminated multiple select_lines texts
+#            eliminated multiple select_lines texts
 #      Version 3.4 April 4, 2014
 #                modified structure to remove recursion problem and incorporate draw()      #
 #       Version 3.3 April 3, 2014
@@ -1870,7 +1871,7 @@ def myfunction(event):
 ##                                                                               ##
 ###################################################################################
 ###################################################################################
-version = " - Version 6.10b"
+version = " - Version 6.11"
 root = Tk()
 root.title("Transformation Generator " + version)
 root.geometry("1200x600")
