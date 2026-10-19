@@ -19,7 +19,8 @@ def references(text):
    row={'id':str(s.get('auid',s.get('id',''))),'label':str(s.get('label','')),'ra':s.get('ra'),'dec':s.get('dec')}
    for b in BANDS:row[b]=number(s.get(b))
    for b in s.get('bands',[]):
-    if b['band'] in BANDS:row[b['band']]=number(b.get('mag'))
+    band=b['band'].replace('Rc','R').replace('Ic','I')
+    if band in BANDS:row[band]=number(b.get('mag'))
    if row['id']:out.append(row)
  else:
   out=[]
