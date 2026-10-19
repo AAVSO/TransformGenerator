@@ -11,12 +11,25 @@ def number(v):
   n=float(str(v).replace(' ',''));return n if math.isfinite(n) and n>-999 else None
  except (ValueError,TypeError): return None
 
+def parse_coord(v,is_ra=False):
+ if v is None:return None
+ try:return float(v)
+ except (ValueError,TypeError):pass
+ try:
+  p=str(v).strip().split(':')
+  if len(p)==3:
+   sign=-1 if p[0].startswith('-') else 1
+   val=sign*(abs(float(p[0]))+float(p[1])/60+float(p[2])/3600)
+   return val*15 if is_ra else val
+ except (ValueError,TypeError):pass
+ return None
+
 def references(text):
  if text.lstrip().startswith(('{','[')):
   data=json.loads(text); data=data.get('photometry',data.get('stars',[])) if isinstance(data,dict) else data
   out=[]
   for s in data:
-   row={'id':str(s.get('auid',s.get('id',''))),'label':str(s.get('label','')),'ra':s.get('ra'),'dec':s.get('dec')}
+   row={'id':str(s.get('auid',s.get('id',''))),'label':str(s.get('label','')),'ra':parse_coord(s.get('ra'),is_ra=True),'dec':parse_coord(s.get('dec'))}
    for b in BANDS:row[b]=number(s.get(b))
    for b in s.get('bands',[]):
     band=b['band'].replace('Rc','R').replace('Ic','I')
@@ -25,7 +38,7 @@ def references(text):
  else:
   out=[]
   for s in csv.DictReader(io.StringIO(text.lstrip('\ufeff'))):
-   s={k.strip():v for k,v in s.items() if k};row={'id':str(s.get('id',s.get('auid',''))),'label':s.get('label',''),'ra':s.get('ra'),'dec':s.get('dec')}
+   s={k.strip():v for k,v in s.items() if k};row={'id':str(s.get('id',s.get('auid',''))),'label':s.get('label',''),'ra':parse_coord(s.get('ra'),is_ra=True),'dec':parse_coord(s.get('dec'))}
    row.update({b:number(s.get(b)) for b in BANDS})
    if row['id']:out.append(row)
  if len(out)<3:raise ValueError('Reference catalog must contain at least three identified stars.')
