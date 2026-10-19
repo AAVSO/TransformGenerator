@@ -32,7 +32,7 @@ def import_data():
  files=[(f.filename,f.read().decode('utf-8-sig',errors='replace')) for f in request.files.getlist('measurements')]
  if not files:raise ValueError('Choose at least one measurement file.')
  if request.form.get('format')=='MaxIm' and len(files)!=1:raise ValueError('MaxIm import accepts one file per set.')
- data=parse_measurements(files,request.form.get('format','CSV'),refs,request.form.get('field',''))
+ data=parse_measurements(files,request.form.get('format','CSV'),refs,request.form.get('field',''),float(request.form.get('snr',20)))
  data['results']=calculate(data['stars']);return jsonify(data)
 @app.post('/api/calculate')
 def recalculate():

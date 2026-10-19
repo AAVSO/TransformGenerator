@@ -30,7 +30,7 @@ def references(text):
  if len(out)<3:raise ValueError('Reference catalog must contain at least three identified stars.')
  return out
 
-def parse_measurements(files,fmt,refs,field=''):
+def parse_measurements(files,fmt,refs,field='',snr=20):
  lookup={s['id']:s for s in refs}; aliases=ALIASES.get(field,{})
  observations={}; warnings=set(); jd=''
  def add(sid,b,val):
@@ -68,19 +68,21 @@ def parse_measurements(files,fmt,refs,field=''):
     for i,sid in cols:
      if i<len(r):add(sid,b,r[i])
   elif fmt=='VPhot':
-   filts=None
+   filt=None;header=None
    for line in lines:
-    r=[x.strip() for x in line.split(';')]
-    if not r[0]:continue
-    if r[0]=='Julian_Day':
-     jd=next((v for i,v in enumerate(r) if i>0 and i%2==1 and number(v) is not None),jd);continue
-    if r[0]=='Filt':
-     filts=[(i,v.lower()) for i,v in enumerate(r) if i>0 and i%2==1 and v];continue
-    if filts:
-     sid=r[0]
-     for i,b in filts:
-      if b in 'ubvri' and i<len(r):add(sid,b,r[i])
-   if filts is None:raise ValueError(filename+': missing VPhot Filt header.')
+    if line.startswith('Filter:'):filt=line.split(':',1)[1].strip().lower();continue
+    if line.startswith('JD:'):jd=line.split(':',1)[1].strip();continue
+    r=[x.strip().strip('"') for x in re.split('[\t;]',line)]
+    if r and r[0]=='Star':header=['Ref-mag' if x.endswith('-mag') else x for x in r];continue
+    if header and len(r)>=len(header) and filt in list('ubvri'):
+     d=dict(zip(header,r));sid=d.get('AUID',d.get('Star',''))
+     if sid not in lookup:
+      candidates=[s for s in refs if str(s.get('label'))==d.get('Label')]
+      if len(candidates)>1:
+       candidates=[s for s in candidates if s.get(filt.upper()) is not None and s.get('B') is not None and s.get('V') is not None and number(d.get('Ref-mag')) is not None and number(d.get('B-V')) is not None and abs(s[filt.upper()]-number(d['Ref-mag']))<.001 and abs(s['B']-s['V']-number(d['B-V']))<.001]
+      if len(candidates)==1:sid=candidates[0]['id']
+     if d.get('Active','').lower()=='true' and (number(d.get('SNR')) or 0)>snr:add(sid,filt,d.get('IM'))
+   if not header:raise ValueError(filename+': missing VPhot tab-separated Star header.')
   else:raise ValueError('Unknown input format.')
  rows=[]
  for sid,m in observations.items():
