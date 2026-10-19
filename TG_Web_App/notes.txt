@@ -1,2 +1,22 @@
 vsp catalog generator:
   https://apps.aavso.org/vsp/api/chart/?format=json&fov=20&maglimit=14.5&special=std_field&star=HW+Cnc
+
+
+
+  todo:
+  - need sample input data files
+  - make import of data step 1, catalog step 2 or automatic
+  - ini file to document source data date, jd and calendar
+  - ini and csv output to show 4 digit precision
+  - fetch of aavso charts
+     chart must be from std_fields list
+        fetch xml with https://vsx.aavso.org/?view=api.std_fields
+        see vsd.views.py
+        see vsd.templates.std_fields.html
+     use data import to determine which field
+  - measured bands count should only be filters in the data import
+  - improve the scaling of the magnitude coefficient graph
+  - Title is Transform Generator, not Transformation Generator 
+  - sort out outputs. Don't use pickle format
+  - production server
+     where to site:  VPhot?, target tool?
