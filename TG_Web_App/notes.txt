@@ -1,0 +1,2 @@
+vsp catalog generator:
+  https://apps.aavso.org/vsp/api/chart/?format=json&fov=20&maglimit=14.5&special=std_field&star=HW+Cnc

@@ -32,7 +32,7 @@ def import_data():
  files=[(f.filename,f.read().decode('utf-8-sig',errors='replace')) for f in request.files.getlist('measurements')]
  if not files:raise ValueError('Choose at least one measurement file.')
  if request.form.get('format')=='MaxIm' and len(files)!=1:raise ValueError('MaxIm import accepts one file per set.')
- data=parse_measurements(files,request.form.get('format','CSV'),refs,request.form.get('field',''),float(request.form.get('snr',20)))
+ data=parse_measurements(files,request.form.get('format','CSV'),refs,request.form.get('field',''))
  data['results']=calculate(data['stars']);return jsonify(data)
 @app.post('/api/calculate')
 def recalculate():
@@ -49,4 +49,4 @@ def export():
   return Response(text,mimetype='text/plain',headers={'Content-Disposition':'attachment; filename=transforms.ini'})
  out=io.StringIO();w=csv.writer(out);w.writerow(['coefficient','value','error','r_squared','count']);w.writerows([r['name'],r['value'],r['stderr'],r['r2'],r.get('n','')] for r in rows)
  return Response(out.getvalue(),mimetype='text/csv',headers={'Content-Disposition':'attachment; filename=transforms.csv'})
-if __name__=='__main__':app.run(host=os.environ.get('HOST','127.0.0.1'),port=int(os.environ.get('PORT',5000)),debug=False)
+if __name__=='__main__':app.run(host=os.environ.get('HOST','127.0.0.1'),port=int(os.environ.get('PORT',5000)),debug=True)
